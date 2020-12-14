@@ -270,7 +270,10 @@ JitsiConference.prototype.constructor = JitsiConference;
 JitsiConference.resourceCreator = function(jid, isAuthenticatedUser) {
     let mucNickname;
 
-	mucNickname = Strophe.getNodeFromJid(jid); //Bizwell. nickname is loginID. by.jhhan
+    //Bizwell. nickname is loginID. by.jhhan
+    mucNickname = Strophe.getNodeFromJid(jid);
+    mucNickname += "#";
+    mucNickname += RandomUtil.randomHexString(8).toLowerCase();
     /*
 	if (isAuthenticatedUser) {
         // For authenticated users generate a random ID.
