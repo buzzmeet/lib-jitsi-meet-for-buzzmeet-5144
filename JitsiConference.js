@@ -272,7 +272,7 @@ JitsiConference.resourceCreator = function(jid, isAuthenticatedUser) {
 
     //Bizwell. nickname is loginID. by.jhhan
     mucNickname = Strophe.getNodeFromJid(jid);
-    mucNickname += "#";
+    mucNickname += "^|^";
     mucNickname += RandomUtil.randomHexString(8).toLowerCase();
     /*
 	if (isAuthenticatedUser) {
