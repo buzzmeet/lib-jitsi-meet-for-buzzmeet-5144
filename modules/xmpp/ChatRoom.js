@@ -1133,7 +1133,7 @@ export default class ChatRoom extends Listenable {
             logger.warn('Maximum users limit for the room has been reached',
                 pres);
             //Bizwell. error message 넘김. by.jhhan
-            this.eventEmitter.emit(XMPPEvents.ROOM_MAX_USERS_ERROR, $(pres).find('>error>text').val());
+            this.eventEmitter.emit(XMPPEvents.ROOM_MAX_USERS_ERROR, $(pres).find('>error>text').text());
         } else if ($(pres)
             .find(
                 '>error[type="auth"]'
