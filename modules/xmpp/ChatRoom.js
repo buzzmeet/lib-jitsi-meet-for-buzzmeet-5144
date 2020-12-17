@@ -1151,7 +1151,8 @@ export default class ChatRoom extends Listenable {
             this.eventEmitter.emit(XMPPEvents.ROOM_CONNECT_MEMBERS_ONLY_ERROR, lobbyRoomJid);
         } else {
             logger.warn('onPresError ', pres);
-            this.eventEmitter.emit(XMPPEvents.ROOM_CONNECT_ERROR);
+            //Bizwell. error message 넘김. by.jhhan
+            this.eventEmitter.emit(XMPPEvents.ROOM_CONNECT_ERROR, $(pres).find('>error>text').text());
         }
     }
 
