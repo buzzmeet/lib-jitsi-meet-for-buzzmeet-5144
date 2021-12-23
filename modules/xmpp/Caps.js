@@ -140,8 +140,18 @@ export default class Caps extends Listenable {
      * @returns {Promise<Set<String>, Error>}
      */
     getFeatures(jid, timeout = 5000) {
-        const user
-            = jid in this.jidToVersion ? this.jidToVersion[jid] : null;
+        // const user
+        //     = jid in this.jidToVersion ? this.jidToVersion[jid] : null;
+
+        let user = null;
+    	const name = jid.split('@')[0];
+    	Object.keys(this.jidToVersion).forEach(version => {
+    		try {
+    			const vname = version.split(config.hosts.muc + '/')[1];
+    			
+    			if(name === vname) user = version;
+    		} catch (e) {}
+    	})
 
         if (!user || !(user.version in this.versionToCapabilities)) {
             const node = user ? `${user.node}#${user.version}` : null;
