@@ -1543,12 +1543,47 @@ TraceablePeerConnection.prototype._getSSRC = function(rtcId) {
  * @returns {RTCSessionDescription} the munged description.
  */
 TraceablePeerConnection.prototype._mungeCodecOrder = function(description) {
-    if (!this.codecPreference || browser.supportsCodecPreferences()) {
+    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+    // if (!this.codecPreference || browser.supportsCodecPreferences()) {
+    //     return description;
+    // }
+
+    // const parsedSdp = transform.parse(description.sdp);
+    // const mLine = parsedSdp.media.find(m => m.type === this.codecPreference.mediaType);
+
+    // if (this.codecPreference.enable) {
+    //     SDPUtil.preferCodec(mLine, this.codecPreference.mimeType);
+
+    //     // Strip the high profile H264 codecs on mobile clients for p2p connection.
+    //     // High profile codecs give better quality at the expense of higher load which
+    //     // we do not want on mobile clients.
+    //     // Jicofo offers only the baseline code for the jvb connection.
+    //     // TODO - add check for mobile browsers once js-utils provides that check.
+    //     if (this.codecPreference.mimeType === CodecMimeType.H264 && browser.isReactNative() && this.isP2P) {
+    //         SDPUtil.stripCodec(mLine, this.codecPreference.mimeType, true /* high profile */);
+    //     }
+    // } else {
+    //     SDPUtil.stripCodec(mLine, this.codecPreference.mimeType);
+    // }
+
+    // return new RTCSessionDescription({
+    //     type: description.type,
+    //     sdp: transform.write(parsedSdp)
+    // });
+
+    if (!this.codecPreference) {
         return description;
     }
 
     const parsedSdp = transform.parse(description.sdp);
+
+    // Only the m-line that defines the source the browser will be sending should need to change.
+    // This is typically the first m-line with the matching media type.
     const mLine = parsedSdp.media.find(m => m.type === this.codecPreference.mediaType);
+
+    if (!mLine) {
+        return description;
+    }
 
     if (this.codecPreference.enable) {
         SDPUtil.preferCodec(mLine, this.codecPreference.mimeType);
@@ -1560,6 +1595,28 @@ TraceablePeerConnection.prototype._mungeCodecOrder = function(description) {
         // TODO - add check for mobile browsers once js-utils provides that check.
         if (this.codecPreference.mimeType === CodecMimeType.H264 && browser.isReactNative() && this.isP2P) {
             SDPUtil.stripCodec(mLine, this.codecPreference.mimeType, true /* high profile */);
+        }
+
+        // Set the max bitrate here on the SDP so that the configured max. bitrate is effective
+        // as soon as the browser switches to VP9.
+        if (this.codecPreference.mimeType === CodecMimeType.VP9
+            && this.getConfiguredVideoCodec() === CodecMimeType.VP9) {
+            const bitrates = this.tpcUtils.videoBitrates.VP9 || this.tpcUtils.videoBitrates;
+            const hdBitrate = bitrates.high ? bitrates.high : HD_BITRATE;
+            const limit = Math.floor((this._isSharingScreen() ? HD_BITRATE : hdBitrate) / 1000);
+
+            // Use only the HD bitrate for now as there is no API available yet for configuring
+            // the bitrates on the individual SVC layers.
+            mLine.bandwidth = [ {
+                type: 'AS',
+                limit
+            } ];
+        } else {
+            // Clear the bandwidth limit in SDP when VP9 is no longer the preferred codec.
+            // This is needed on react native clients as react-native-webrtc returns the
+            // SDP that the application passed instead of returning the SDP off the native side.
+            // This line automatically gets cleared on web on every renegotiation.
+            mLine.bandwidth = undefined;
         }
     } else {
         SDPUtil.stripCodec(mLine, this.codecPreference.mimeType);
@@ -2873,4 +2930,44 @@ TraceablePeerConnection.prototype._mungeOpus = function(description) {
         type: description.type,
         sdp: transform.write(parsedSdp)
     });
+};
+
+/**
+ * Returns the codec that is configured on the client as the preferred video codec.
+ * This takes into account the current order of codecs in the local description sdp.
+ *
+ * @returns {CodecMimeType} The codec that is set as the preferred codec to receive
+ * video in the local SDP.
+ */
+ TraceablePeerConnection.prototype.getConfiguredVideoCodec = function() {
+    const sdp = this.peerconnection.localDescription?.sdp;
+    const defaultCodec = CodecMimeType.VP8;
+
+    if (!sdp) {
+        return defaultCodec;
+    }
+    const parsedSdp = transform.parse(sdp);
+    const mLine = parsedSdp.media.find(m => m.type === MediaType.VIDEO);
+    const codec = mLine.rtp[0].codec;
+
+    if (codec) {
+        return Object.values(CodecMimeType).find(value => value === codec.toLowerCase());
+    }
+
+    return defaultCodec;
+};
+
+TraceablePeerConnection.prototype._isSharingScreen = function() {
+    const tracks = this.getLocalVideoTracks();
+
+    return Boolean(tracks.find(track => track.videoType === VideoType.DESKTOP));
+};
+
+/**
+ * Retrieves the local video tracks.
+ *
+ * @returns {JitsiLocalTrack|undefined} - local video tracks.
+ */
+ TraceablePeerConnection.prototype.getLocalVideoTracks = function() {
+    return this.getLocalTracks(MediaType.VIDEO);
 };
