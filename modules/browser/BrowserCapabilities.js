@@ -188,7 +188,7 @@ export default class BrowserCapabilities extends BrowserDetection {
      * @returns {boolean}
      */
     usesPlanB() {
-        return !this.usesUnifiedPlan();
+        return false;//!this.usesUnifiedPlan();
     }
 
     /**
