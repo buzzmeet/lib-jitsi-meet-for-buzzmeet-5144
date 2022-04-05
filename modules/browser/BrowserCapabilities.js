@@ -184,7 +184,7 @@ export default class BrowserCapabilities extends BrowserDetection {
 
     /**
      * Checks if the browser uses plan B.
-     *
+     * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
      * @returns {boolean}
      */
     usesPlanB() {
@@ -315,7 +315,7 @@ export default class BrowserCapabilities extends BrowserDetection {
     /**
      * Checks if the browser supports the "sdpSemantics" configuration option.
      * https://webrtc.org/web-apis/chrome/unified-plan/
-     *
+     * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
      * @returns {boolean}
      */
     supportsSdpSemantics() {

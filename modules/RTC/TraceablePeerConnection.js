@@ -1993,9 +1993,9 @@ TraceablePeerConnection.prototype.setLocalDescription = function(description) {
         localSdp = this._adjustLocalMediaDirection(localSdp);
         localSdp = this._ensureSimulcastGroupIsLast(localSdp);
     } else {
-
+        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
         // if we're using unified plan, transform to it first.
-        localSdp = this.interop.toUnifiedPlan(localSdp);
+        // localSdp = this.interop.toUnifiedPlan(localSdp);
         this.trace(
             'setLocalDescription::postTransform (Unified Plan)',
             dumpSDP(localSdp));
@@ -2177,11 +2177,19 @@ TraceablePeerConnection.prototype.setMaxBitRate = function() {
 };
 
 TraceablePeerConnection.prototype.setRemoteDescription = function(description) {
-    this.trace('setRemoteDescription::preTransform', dumpSDP(description));
+    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+    //this.trace('setRemoteDescription::preTransform', dumpSDP(description));
 
     // Munge the order of the codecs based on the preferences set through config.js
     // eslint-disable-next-line no-param-reassign
-    description = this._mungeCodecOrder(description);
+    //description = this._mungeCodecOrder(description);
+
+    let remoteDescription = description;
+
+    this.trace('setRemoteDescription::preTransform', dumpSDP(description));
+
+    // Munge stereo flag and opusMaxAverageBitrate based on config.js
+    remoteDescription = this._mungeOpus(remoteDescription);
 
     if (browser.usesPlanB()) {
         // TODO the focus should squeze or explode the remote simulcast
@@ -2201,34 +2209,48 @@ TraceablePeerConnection.prototype.setRemoteDescription = function(description) {
         // eslint-disable-next-line no-param-reassign
         description = normalizePlanB(description);
     } else {
-        const currentDescription = this.peerconnection.remoteDescription;
+        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+        // const currentDescription = this.peerconnection.remoteDescription;
 
-        // eslint-disable-next-line no-param-reassign
-        description = this.interop.toUnifiedPlan(description, currentDescription);
-        this.trace(
-            'setRemoteDescription::postTransform (Unified)',
-            dumpSDP(description));
+        // // eslint-disable-next-line no-param-reassign
+        // description = this.interop.toUnifiedPlan(description, currentDescription);
+        // this.trace(
+        //     'setRemoteDescription::postTransform (Unified)',
+        //     dumpSDP(description));
+
+        // if (this.isSimulcastOn()) {
+        //     // eslint-disable-next-line no-param-reassign
+        //     description = this.simulcast.mungeRemoteDescription(description);
+
+        //     // eslint-disable-next-line no-param-reassign
+        //     description = this.tpcUtils.insertUnifiedPlanSimulcastReceive(description);
+        //     this.trace(
+        //         'setRemoteDescription::postTransform (sim receive)',
+        //         dumpSDP(description));
+
+        //     // eslint-disable-next-line no-param-reassign
+        //     description = this.tpcUtils.ensureCorrectOrderOfSsrcs(description);
+        // }
 
         if (this.isSimulcastOn()) {
-            // eslint-disable-next-line no-param-reassign
-            description = this.simulcast.mungeRemoteDescription(description);
-
-            // eslint-disable-next-line no-param-reassign
-            description = this.tpcUtils.insertUnifiedPlanSimulcastReceive(description);
-            this.trace(
-                'setRemoteDescription::postTransform (sim receive)',
-                dumpSDP(description));
-
-            // eslint-disable-next-line no-param-reassign
-            description = this.tpcUtils.ensureCorrectOrderOfSsrcs(description);
+            // Implode the simulcast ssrcs so that the remote sdp has only the first ssrc in the SIM group.
+            remoteDescription = this.simulcast.mungeRemoteDescription(
+                remoteDescription,
+                true /* add x-google-conference flag */);
+            this.trace('setRemoteDescription::postTransform (simulcast)', dumpSDP(remoteDescription));
         }
+        remoteDescription = normalizePlanB(remoteDescription);
+
+        // Munge the order of the codecs based on the preferences set through config.js.
+        remoteDescription = this._mungeCodecOrder(remoteDescription);
+        this.trace('setRemoteDescription::postTransform (munge codec order)', dumpSDP(remoteDescription));
     }
 
     return new Promise((resolve, reject) => {
-        this.peerconnection.setRemoteDescription(description)
+        this.peerconnection.setRemoteDescription(remoteDescription)
             .then(() => {
                 this.trace('setRemoteDescriptionOnSuccess');
-                const remoteUfrag = SDPUtil.getUfrag(description.sdp);
+                const remoteUfrag = SDPUtil.getUfrag(remoteDescription.sdp);
 
                 if (remoteUfrag !== this.remoteUfrag) {
                     this.remoteUfrag = remoteUfrag;
