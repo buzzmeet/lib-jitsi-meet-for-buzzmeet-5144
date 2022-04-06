@@ -260,7 +260,8 @@ export default class SdpSimulcast {
                 continue;
             }
 
-            if (media.direction !== MediaDirection.SENDONLY) {
+            // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+            if (media.direction !== MediaDirection.SENDONLY && media.direction !== MediaDirection.SENDRECV) {
                 continue;
             }
 
