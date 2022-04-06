@@ -12,6 +12,9 @@ const minimize
 module.exports = {
     // The inline-source-map is used to allow debugging the unit tests with Karma
     devtool: minimize ? 'source-map' : 'inline-source-map',
+    resolve: {
+        extensions: [ '.js', '.ts' ]
+    },
     mode: minimize ? 'production' : 'development',
     module: {
         rules: [ {
@@ -62,7 +65,7 @@ module.exports = {
                     '@babel/plugin-proposal-export-namespace-from'
                 ]
             },
-            test: /\.js$/
+            test: /\.(js|ts)$/
         } ]
     },
     node: {

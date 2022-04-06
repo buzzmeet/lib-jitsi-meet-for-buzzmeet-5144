@@ -16,12 +16,14 @@ import SDP from '../xmpp/SDP';
 import SDPUtil from '../xmpp/SDPUtil';
 import SdpConsistency from '../xmpp/SdpConsistency';
 import { SdpTransformWrap } from '../xmpp/SdpTransformUtil';
+import FeatureFlags from '../flags/FeatureFlags';
 
 import JitsiRemoteTrack from './JitsiRemoteTrack';
 import LocalSdpMunger from './LocalSdpMunger';
 import RTC from './RTC';
 import RTCUtils from './RTCUtils';
 import { SIM_LAYER_RIDS, TPCUtils } from './TPCUtils';
+import SdpSimulcast from '../xmpp/SdpSimulcast.ts';
 
 // FIXME SDP tools should end up in some kind of util module
 
@@ -260,12 +262,14 @@ export default function TraceablePeerConnection(
     this.interop = new Interop();
     const Simulcast = require('@jitsi/sdp-simulcast');
 
-    this.simulcast = new Simulcast(
-        {
-            numOfLayers: SIM_LAYER_RIDS.length,
-            explodeRemoteSimulcast: false,
-            usesUnifiedPlan: browser.usesUnifiedPlan()
-        });
+    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+    // this.simulcast = new Simulcast(
+    //     {
+    //         numOfLayers: SIM_LAYER_RIDS.length,
+    //         explodeRemoteSimulcast: false,
+    //         usesUnifiedPlan: browser.usesUnifiedPlan()
+    //     });
+    this.simulcast = new SdpSimulcast({ numOfLayers: SIM_LAYER_RIDS.length })
     this.sdpConsistency = new SdpConsistency(this.toString());
 
     /**
@@ -1468,7 +1472,8 @@ const getters = {
         this.trace('getLocalDescription::preTransform', dumpSDP(desc));
 
         // if we're running on FF, transform to Plan B first.
-        if (browser.usesUnifiedPlan()) {
+        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+        if (browser.usesUnifiedPlan() && !this.isP2P) {
             desc = this.interop.toPlanB(desc);
             this.trace('getLocalDescription::postTransform (Plan B)',
                 dumpSDP(desc));
@@ -1476,7 +1481,7 @@ const getters = {
             desc = this._injectSsrcGroupForUnifiedSimulcast(desc);
             this.trace('getLocalDescription::postTransform (inject ssrc group)',
                 dumpSDP(desc));
-        } else {
+        } else if (!browser.usesUnifiedPlan()) {
             if (browser.doesVideoMuteByStreamRemove()) {
                 desc = this.localSdpMunger.maybeAddMutedLocalVideoTracksToSDP(desc);
                 logger.debug(
@@ -1510,10 +1515,15 @@ const getters = {
         this.trace('getRemoteDescription::preTransform', dumpSDP(desc));
 
         // if we're running on FF, transform to Plan B first.
+        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
         if (browser.usesUnifiedPlan()) {
-            desc = this.interop.toPlanB(desc);
-            this.trace(
-                'getRemoteDescription::postTransform (Plan B)', dumpSDP(desc));
+            if (this.isP2P) {
+                desc = this._adjustRemoteMediaDirection(desc);
+            } else {
+                desc = this.interop.toPlanB(desc);
+                this.trace(
+                    'getRemoteDescription::postTransform (Plan B)', dumpSDP(desc));
+            }
         }
 
         return desc;
@@ -1664,7 +1674,8 @@ TraceablePeerConnection.prototype.addTrack = function(track, isInitiator = false
     this.localTracks.set(rtcId, track);
 
     // For p2p unified case, use addTransceiver API to add the tracks on the peerconnection.
-    if (browser.usesUnifiedPlan() && this.isP2P) {
+    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+    if (browser.usesUnifiedPlan()) {
         this.tpcUtils.addTrack(track, isInitiator);
     } else {
         // In all other cases, i.e., plan-b and unified plan bridge case, use addStream API to
@@ -1685,8 +1696,7 @@ TraceablePeerConnection.prototype.addTrack = function(track, isInitiator = false
         }
 
         // Muted video tracks do not have WebRTC stream
-        if (browser.usesPlanB() && browser.doesVideoMuteByStreamRemove()
-                && track.isVideoTrack() && track.isMuted()) {
+        if (browser.doesVideoMuteByStreamRemove() && track.isVideoTrack() && track.isMuted()) {
             const ssrcInfo = this.generateNewStreamSSRCInfo(track);
 
             this.sdpConsistency.setPrimarySsrc(ssrcInfo.ssrcs[0]);
@@ -1749,7 +1759,7 @@ TraceablePeerConnection.prototype.addTrackUnmute = function(track) {
     }
 
     if (browser.usesUnifiedPlan()) {
-        return this.tpcUtils.addTrackUnmute(track);
+        return this.tpcUtils.replaceTrack(null, track).then(() => false);
     }
 
     this._addStream(webRtcStream);
@@ -1882,12 +1892,94 @@ TraceablePeerConnection.prototype.findSenderForTrack = function(track) {
  * renegotiation will be needed. Otherwise no renegotiation is needed.
  */
 TraceablePeerConnection.prototype.replaceTrack = function(oldTrack, newTrack) {
-    if (browser.usesUnifiedPlan()) {
-        return this.tpcUtils.replaceTrack(oldTrack, newTrack)
+    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+    // if (browser.usesUnifiedPlan()) {
+    //     return this.tpcUtils.replaceTrack(oldTrack, newTrack)
 
-            // renegotiate when SDP is used for simulcast munging
-            .then(() => this.isSimulcastOn() && browser.usesSdpMungingForSimulcast());
+    //         // renegotiate when SDP is used for simulcast munging
+    //         .then(() => this.isSimulcastOn() && browser.usesSdpMungingForSimulcast());
+    // }
+
+    // let promiseChain = Promise.resolve();
+
+    // if (oldTrack) {
+    //     this.removeTrack(oldTrack);
+    // }
+    // if (newTrack) {
+    //     promiseChain = this.addTrack(newTrack);
+    // }
+
+    // return promiseChain.then(() => true);
+
+    if (!(oldTrack || newTrack)) {
+        logger.info(`${this} replaceTrack called with no new track and no old track`);
+
+        return Promise.resolve();
     }
+
+    // If a track is being added to the peerconnection for the first time, we want the source signaling to be sent to
+    // Jicofo before the mute state is sent over presence. Therefore, trigger a renegotiation in this case. If we
+    // rely on "negotiationneeded" fired by the browser to signal new ssrcs, the mute state in presence will be sent
+    // before the source signaling which is undesirable.
+    // Send the presence before signaling for a new screenshare source. This is needed for multi-stream support since
+    // videoType needs to be availble at remote track creation time so that a fake tile for screenshare can be added.
+    // FIXME - This check needs to be removed when the client switches to the bridge based signaling for tracks.
+    const isNewTrackScreenshare = !oldTrack
+        && newTrack?.getVideoType() === VideoType.DESKTOP
+        && FeatureFlags.isMultiStreamSupportEnabled();
+    const negotiationNeeded = !isNewTrackScreenshare && Boolean(!oldTrack || !this.localTracks.has(oldTrack?.rtcId));
+
+    if (browser.usesUnifiedPlan()) {
+        logger.debug(`${this} TPC.replaceTrack using unified plan`);
+        const mediaType = newTrack?.getType() ? newTrack?.getType() : oldTrack?.getType();
+        const stream = newTrack?.getOriginalStream();
+        const promise = newTrack && !stream
+
+            // Ignore cases when the track is replaced while the device is in a muted state.
+            // The track will be replaced again on the peerconnection when the user unmutes.
+            ? Promise.resolve()
+            : this.tpcUtils.replaceTrack(oldTrack, newTrack);
+
+        return promise
+            .then(transceiver => {
+                oldTrack && this.localTracks.delete(oldTrack.rtcId);
+                newTrack && this.localTracks.set(newTrack.rtcId, newTrack);
+
+                // Update the local SSRC cache for the case when one track gets replaced with another and no
+                // renegotiation is triggered as a result of this.
+                if (oldTrack && newTrack) {
+                    const oldTrackSSRC = this.localSSRCs.get(oldTrack.rtcId);
+
+                    if (oldTrackSSRC) {
+                        this.localSSRCs.delete(oldTrack.rtcId);
+                        this.localSSRCs.set(newTrack.rtcId, oldTrackSSRC);
+                    }
+                }
+                const mediaActive = mediaType === MediaType.AUDIO
+                    ? this.audioTransferActive
+                    : this.videoTransferActive;
+
+                // Set the transceiver direction only if media is not suspended on the connection. This happens when
+                // the client is using the p2p connection. Transceiver direction is updated when media is resumed on
+                // this connection again.
+                if (transceiver && mediaActive) {
+                    transceiver.direction = newTrack ? MediaDirection.SENDRECV : MediaDirection.RECVONLY;
+                } else if (transceiver) {
+                    transceiver.direction = MediaDirection.INACTIVE;
+                }
+
+                // Avoid configuring the encodings on Chromium/Safari until simulcast is configured
+                // for the newly added track using SDP munging which happens during the renegotiation.
+                const configureEncodingsPromise = browser.usesSdpMungingForSimulcast() || !newTrack
+                    ? Promise.resolve()
+                    : this.tpcUtils.setEncodings(newTrack);
+
+                // Force renegotiation only when the source is added for the first time.
+                return configureEncodingsPromise.then(() => negotiationNeeded);
+            });
+    }
+
+    logger.debug(`${this} TPC.replaceTrack using plan B`);
 
     let promiseChain = Promise.resolve();
 
@@ -1922,7 +2014,7 @@ TraceablePeerConnection.prototype.removeTrackMute = function(localTrack) {
     }
 
     if (browser.usesUnifiedPlan()) {
-        return this.tpcUtils.removeTrackMute(localTrack);
+        return this.tpcUtils.replaceTrack(localTrack, null).then(() => false);
     }
 
     if (webRtcStream) {
@@ -2037,6 +2129,35 @@ TraceablePeerConnection.prototype._adjustLocalMediaDirection = function(
 
     return localDescription;
 };
+
+/**
+ * Adjusts the media direction on the remote description based on availability of local and remote sources in a p2p
+ * media connection.
+ *
+ * @param {RTCSessionDescription} remoteDescription the WebRTC session description instance for the remote description.
+ * @returns the transformed remoteDescription.
+ * @private
+ */
+ TraceablePeerConnection.prototype._adjustRemoteMediaDirection = function(remoteDescription) {
+    const transformer = new SdpTransformWrap(remoteDescription.sdp);
+
+    [ MediaType.AUDIO, MediaType.VIDEO ].forEach(mediaType => {
+        const media = transformer.selectMedia(mediaType)?.[0];
+        const hasLocalSource = this.hasAnyTracksOfType(mediaType);
+        const hasRemoteSource = this.getRemoteTracks(null, mediaType).length > 0;
+
+        media.direction = hasLocalSource && hasRemoteSource
+            ? MediaDirection.SENDRECV
+            : hasLocalSource
+                ? MediaDirection.RECVONLY
+                : hasRemoteSource ? MediaDirection.SENDONLY : MediaDirection.INACTIVE;
+    });
+
+    return new RTCSessionDescription({
+        type: remoteDescription.type,
+        sdp: transformer.toRawSDP()
+    });
+}
 
 TraceablePeerConnection.prototype.setLocalDescription = function(description) {
     let localSdp = description;

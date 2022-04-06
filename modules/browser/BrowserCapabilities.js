@@ -217,8 +217,9 @@ export default class BrowserCapabilities extends BrowserDetection {
             return Object.keys(RTCRtpTransceiver.prototype)
                    .indexOf('currentDirection') > -1;
         }
-
-        return false;
+        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+        // return false;
+        return true;
     }
 
     /**
