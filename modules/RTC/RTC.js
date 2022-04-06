@@ -522,9 +522,10 @@ export default class RTC extends Listenable {
             iceConfig.forceEncodedVideoInsertableStreams = true; // legacy, to be removed in M88.
         }
 
-        if (browser.supportsSdpSemantics()) {
-            iceConfig.sdpSemantics = 'plan-b';
-        }
+        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+        //if (browser.supportsSdpSemantics()) {
+            iceConfig.sdpSemantics = 'unified-plan';
+        //}
 
         // Set the RTCBundlePolicy to max-bundle so that only one set of ice candidates is generated.
         // The default policy generates separate ice candidates for audio and video connections.
