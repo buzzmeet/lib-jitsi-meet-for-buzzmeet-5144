@@ -2414,19 +2414,30 @@ TraceablePeerConnection.prototype.setRemoteDescription = function(description) {
         //     description = this.tpcUtils.ensureCorrectOrderOfSsrcs(description);
         // }
 
+         // Translate the SDP to Unified plan format first for the jvb case, p2p case will only have 2 m-lines.
+         if (!this.isP2P) {
+            const currentDescription = this.peerconnection.remoteDescription;
+
+            remoteDescription = this.interop.toUnifiedPlan(remoteDescription, currentDescription);
+            this.trace('setRemoteDescription::postTransform (Unified)', dumpSDP(remoteDescription));
+        }
         if (this.isSimulcastOn()) {
             // Implode the simulcast ssrcs so that the remote sdp has only the first ssrc in the SIM group.
-            remoteDescription = this.simulcast.mungeRemoteDescription(
-                remoteDescription,
-                true /* add x-google-conference flag */);
+            remoteDescription = this.simulcast.mungeRemoteDescription(remoteDescription);
             this.trace('setRemoteDescription::postTransform (simulcast)', dumpSDP(remoteDescription));
-        }
-        remoteDescription = normalizePlanB(remoteDescription);
 
-        // Munge the order of the codecs based on the preferences set through config.js.
-        remoteDescription = this._mungeCodecOrder(remoteDescription);
-        this.trace('setRemoteDescription::postTransform (munge codec order)', dumpSDP(remoteDescription));
+            remoteDescription = this.tpcUtils.insertUnifiedPlanSimulcastReceive(remoteDescription);
+            this.trace('setRemoteDescription::postTransform (sim receive)', dumpSDP(remoteDescription));
+        }
+        remoteDescription = this.tpcUtils.ensureCorrectOrderOfSsrcs(remoteDescription);
+        this.trace('setRemoteDescription::postTransform (correct ssrc order)', dumpSDP(remoteDescription));
+
+        
     }
+
+    // Munge the order of the codecs based on the preferences set through config.js.
+    remoteDescription = this._mungeCodecOrder(remoteDescription);
+    this.trace('setRemoteDescription::postTransform (munge codec order)', dumpSDP(remoteDescription));
 
     return new Promise((resolve, reject) => {
         this.peerconnection.setRemoteDescription(remoteDescription)
