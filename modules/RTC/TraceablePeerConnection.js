@@ -253,6 +253,9 @@ export default function TraceablePeerConnection(
     this.stats = {};
     this.statsinterval = null;
 
+    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+    this._usesTransceiverCodecPreferences = browser.supportsCodecPreferences() && browser.usesUnifiedPlan();
+
     /**
      * @type {number} The max number of stats to keep in this.stats. Limit to
      * 300 values, i.e. 5 minutes; set to 0 to disable
@@ -2164,20 +2167,20 @@ TraceablePeerConnection.prototype.setLocalDescription = function(description) {
 
     this.trace('setLocalDescription::preTransform', dumpSDP(localSdp));
 
+    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
     // Munge the order of the codecs based on the preferences set through config.js
-    localSdp = this._mungeCodecOrder(localSdp);
+    localSdp = this._mungeOpus(localSdp);
 
-    if (browser.usesPlanB()) {
+    if (!browser.usesUnifiedPlan()) {
         localSdp = this._adjustLocalMediaDirection(localSdp);
         localSdp = this._ensureSimulcastGroupIsLast(localSdp);
-    } else {
-        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
-        // if we're using unified plan, transform to it first.
-        // localSdp = this.interop.toUnifiedPlan(localSdp);
-        this.trace(
-            'setLocalDescription::postTransform (Unified Plan)',
-            dumpSDP(localSdp));
     }
+
+    if (!this._usesTransceiverCodecPreferences) {
+        localSdp = this._mungeCodecOrder(localSdp);
+    }
+
+    this.trace('setLocalDescription::postTransform (Unified Plan)', dumpSDP(localSdp));
 
     return new Promise((resolve, reject) => {
         this.peerconnection.setLocalDescription(localSdp)
@@ -2793,6 +2796,41 @@ TraceablePeerConnection.prototype._createOfferOrAnswer = function(
 
         rejectFn(err);
     };
+
+    if (this._usesTransceiverCodecPreferences) {
+        const transceiver = this.peerconnection.getTransceivers()
+            .find(t => t.receiver && t.receiver?.track?.kind === MediaType.VIDEO);
+
+        if (transceiver) {
+            let capabilities = RTCRtpReceiver.getCapabilities(MediaType.VIDEO)?.codecs;
+            const mimeType = this.codecPreference?.mimeType;
+            const enable = this.codecPreference?.enable;
+
+            if (capabilities && mimeType && enable) {
+                // Move the desired codec (all variations of it as well) to the beginning of the list.
+                /* eslint-disable-next-line arrow-body-style */
+                capabilities.sort(caps => {
+                    return caps.mimeType.toLowerCase() === `${MediaType.VIDEO}/${mimeType}` ? -1 : 1;
+                });
+            } else if (capabilities && mimeType) {
+                capabilities = capabilities
+                    .filter(caps => caps.mimeType.toLowerCase() !== `${MediaType.VIDEO}/${mimeType}`);
+            }
+
+            // Disable ulpfec on Google Chrome and derivatives because
+            // https://bugs.chromium.org/p/chromium/issues/detail?id=1276427
+            if (browser.isChromiumBased()) {
+                capabilities = capabilities
+                    .filter(caps => caps.mimeType.toLowerCase() !== `${MediaType.VIDEO}/${CodecMimeType.ULPFEC}`);
+            }
+
+            try {
+                transceiver.setCodecPreferences(capabilities);
+            } catch (err) {
+                logger.warn(`${this} Setting codec[preference=${mimeType},enable=${enable}] failed`, err);
+            }
+        }
+    }
 
     return new Promise((resolve, reject) => {
         let oaPromise;
