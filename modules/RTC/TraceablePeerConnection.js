@@ -255,6 +255,7 @@ export default function TraceablePeerConnection(
 
     // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
     this._usesTransceiverCodecPreferences = browser.supportsCodecPreferences() && browser.usesUnifiedPlan();
+    this._capScreenshareBitrate = this.options.capScreenshareBitrate;
 
     /**
      * @type {number} The max number of stats to keep in this.stats. Limit to
@@ -1286,7 +1287,7 @@ const normalizePlanB = function(desc) {
                 for (i = 0; i < mLine.ssrcs.length; i++) {
                     if (typeof mLine.ssrcs[i] === 'object'
                         && typeof mLine.ssrcs[i].id !== 'undefined'
-                        && firstSsrcs.indexOf(mLine.ssrcs[i].id) >= 0) {
+                        /*&& firstSsrcs.indexOf(mLine.ssrcs[i].id) >= 0*/) {
                         newSsrcLines.push(mLine.ssrcs[i]);
                         delete mLine.ssrcs[i];
                     }
@@ -1298,7 +1299,7 @@ const normalizePlanB = function(desc) {
                     }
                 }
 
-                mLine.ssrcs = replaceDefaultUnifiedPlanMsid(newSsrcLines);
+                //mLine.ssrcs = replaceDefaultUnifiedPlanMsid(newSsrcLines);
             }
         });
     }
@@ -2972,8 +2973,7 @@ TraceablePeerConnection.prototype.generateNewStreamSSRCInfo = function(track) {
     // desktop tracks only when the testing flag for maxbitrates
     // in config.js is disabled.
     if (this.isSimulcastOn()
-        && (!this.options.capScreenshareBitrate
-        || (this.options.capScreenshareBitrate && hasCameraTrack(this)))) {
+        && (track.getVideoType() === VideoType.CAMERA || !this.isSharingLowFpsScreen())) {
         ssrcInfo = {
             ssrcs: [],
             groups: []
@@ -3129,4 +3129,14 @@ TraceablePeerConnection.prototype._isSharingScreen = function() {
  */
  TraceablePeerConnection.prototype.getLocalVideoTracks = function() {
     return this.getLocalTracks(MediaType.VIDEO);
+};
+
+/**
+ * Checks if low fps screensharing is in progress.
+ *
+ * @private
+ * @returns {boolean} Returns true if 5 fps screensharing is in progress, false otherwise.
+ */
+ TraceablePeerConnection.prototype.isSharingLowFpsScreen = function() {
+    return this._isSharingScreen() && this._capScreenshareBitrate;
 };
