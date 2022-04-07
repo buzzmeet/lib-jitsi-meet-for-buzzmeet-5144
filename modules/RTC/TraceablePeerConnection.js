@@ -1680,7 +1680,13 @@ TraceablePeerConnection.prototype.addTrack = function(track, isInitiator = false
     // For p2p unified case, use addTransceiver API to add the tracks on the peerconnection.
     // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
     if (browser.usesUnifiedPlan()) {
-        this.tpcUtils.addTrack(track, isInitiator);
+        try {
+            this.tpcUtils.addTrack(track, isInitiator);
+        } catch (error) {
+            logger.error(`${this} Adding track=${track} failed: ${error?.message}`);
+
+            return Promise.reject(error);
+        }
     } else {
         // In all other cases, i.e., plan-b and unified plan bridge case, use addStream API to
         // add the track to the peerconnection.
