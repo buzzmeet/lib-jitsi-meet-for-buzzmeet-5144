@@ -530,21 +530,18 @@ TraceablePeerConnection.prototype.getConnectionState = function() {
  */
 TraceablePeerConnection.prototype._getDesiredMediaDirection = function(
         mediaType) {
-    const hasLocalSource = this.hasAnyTracksOfType(mediaType);
+    let mediaTransferActive = true;
 
-    if (this._usesUnifiedPlan) {
-        return isAddOperation
-            ? hasLocalSource ? MediaDirection.SENDRECV : MediaDirection.SENDONLY
-            : hasLocalSource ? MediaDirection.RECVONLY : MediaDirection.INACTIVE;
+    if (mediaType === MediaType.AUDIO) {
+        mediaTransferActive = this.audioTransferActive;
+    } else if (mediaType === MediaType.VIDEO) {
+        mediaTransferActive = this.videoTransferActive;
     }
-
-    const mediaTransferActive = mediaType === MediaType.AUDIO ? this.audioTransferActive : this.videoTransferActive;
-
     if (mediaTransferActive) {
-        return hasLocalSource ? MediaDirection.SENDRECV : MediaDirection.RECVONLY;
+        return this.hasAnyTracksOfType(mediaType) ? 'sendrecv' : 'recvonly';
     }
 
-    return MediaDirection.INACTIVE;
+    return 'inactive';
 };
 
 /**
