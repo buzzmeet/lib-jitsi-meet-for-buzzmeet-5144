@@ -2911,6 +2911,8 @@ TraceablePeerConnection.prototype._createOfferOrAnswer = function(
                     dumpSDP(resultSdp));
             }
 
+            const localVideoTrack = this.getLocalVideoTracks()[0];
+
             // configure simulcast for camera tracks always and for
             // desktop tracks only when the testing flag for maxbitrates
             // in config.js is disabled.
