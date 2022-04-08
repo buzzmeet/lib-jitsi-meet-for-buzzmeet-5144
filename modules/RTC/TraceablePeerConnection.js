@@ -393,7 +393,6 @@ export default function TraceablePeerConnection(
                 this._remoteTrackRemoved(stream, evt.track);
             };
         };
-        this.peerconnection.addEventListener('track', this.onTrack);
     } else {
         this.peerconnection.onaddstream = event => this._remoteStreamAdded(event.stream);
         this.peerconnection.onremovestream = event => this._remoteStreamRemoved(event.stream);
