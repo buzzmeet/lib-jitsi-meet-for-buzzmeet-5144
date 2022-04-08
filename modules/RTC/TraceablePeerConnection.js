@@ -389,9 +389,9 @@ export default function TraceablePeerConnection(
             const stream = evt.streams[0];
 
             this._remoteTrackAdded(stream, evt.track, evt.transceiver);
-            stream.addEventListener('removetrack', e => {
-                this._remoteTrackRemoved(stream, e.track);
-            });
+            stream.onremovetrack = evt => {
+                this._remoteTrackRemoved(stream, evt.track);
+            };
         };
         this.peerconnection.addEventListener('track', this.onTrack);
     } else {
@@ -806,7 +806,7 @@ TraceablePeerConnection.prototype._remoteTrackAdded = function(stream, track, tr
     const streamId = RTC.getStreamID(stream);
     const mediaType = track.kind;
 
-    if (!RTC.isUserStreamById(streamId)) {
+    if (!this.isP2P && !RTC.isUserStreamById(streamId)) {
         logger.info(
             `${this} ignored remote 'stream added' event for non-user stream`
              + `id: ${streamId}`);
