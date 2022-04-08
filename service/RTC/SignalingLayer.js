@@ -40,4 +40,10 @@ export default class SignalingLayer extends Listenable {
     getPeerMediaInfo(owner, mediaType) { // eslint-disable-line no-unused-vars
         throw new Error('not implemented');
     }
+
+    getSourceNameForJitsiTrack(endpointId, mediaType, trackIdx) {
+        const firstLetterOfMediaType = mediaType.substring(0, 1);
+    
+        return `${endpointId}-${firstLetterOfMediaType}${trackIdx}`;
+    }
 }

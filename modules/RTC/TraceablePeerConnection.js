@@ -264,7 +264,6 @@ export default function TraceablePeerConnection(
     this.maxstats = options.maxstats;
 
     this.interop = new Interop();
-    const Simulcast = require('@jitsi/sdp-simulcast');
 
     // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
     // this.simulcast = new Simulcast(
@@ -273,7 +272,19 @@ export default function TraceablePeerConnection(
     //         explodeRemoteSimulcast: false,
     //         usesUnifiedPlan: browser.usesUnifiedPlan()
     //     });
-    this.simulcast = new SdpSimulcast({ numOfLayers: SIM_LAYER_RIDS.length })
+    if (browser.usesUnifiedPlan()) {
+        this.simulcast = new SdpSimulcast({ numOfLayers: SIM_LAYER_RIDS.length })
+    } else {
+        const Simulcast = require('@jitsi/sdp-simulcast');
+
+        this.simulcast = new Simulcast(
+            {
+                numOfLayers: SIM_LAYER_RIDS.length,
+                explodeRemoteSimulcast: false,
+                usesUnifiedPlan: false
+            });
+    }
+    
     this.sdpConsistency = new SdpConsistency(this.toString());
 
     /**
@@ -356,22 +367,39 @@ export default function TraceablePeerConnection(
         }
     };
 
+    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
     // Use stream events in plan-b and track events in unified plan.
-    if (browser.usesPlanB()) {
-        this.peerconnection.onaddstream
-            = event => this._remoteStreamAdded(event.stream);
-        this.peerconnection.onremovestream
-            = event => this._remoteStreamRemoved(event.stream);
-    } else {
-        this.peerconnection.ontrack = event => {
-            const stream = event.streams[0];
+    // if (browser.usesPlanB()) {
+    //     this.peerconnection.onaddstream
+    //         = event => this._remoteStreamAdded(event.stream);
+    //     this.peerconnection.onremovestream
+    //         = event => this._remoteStreamRemoved(event.stream);
+    // } else {
+    //     this.peerconnection.ontrack = event => {
+    //         const stream = event.streams[0];
 
-            this._remoteTrackAdded(stream, event.track, event.transceiver);
-            stream.onremovetrack = evt => {
-                this._remoteTrackRemoved(stream, evt.track);
-            };
+    //         this._remoteTrackAdded(stream, event.track, event.transceiver);
+    //         stream.onremovetrack = evt => {
+    //             this._remoteTrackRemoved(stream, evt.track);
+    //         };
+    //     };
+    // }
+    if (browser.usesUnifiedPlan()) {
+        this.onTrack = evt => {
+            const stream = evt.streams[0];
+
+            this._remoteTrackAdded(stream, evt.track, evt.transceiver);
+            stream.addEventListener('removetrack', e => {
+                this._remoteTrackRemoved(stream, e.track);
+            });
         };
+        this.peerconnection.addEventListener('track', this.onTrack);
+    } else {
+        this.peerconnection.onaddstream = event => this._remoteStreamAdded(event.stream);
+        this.peerconnection.onremovestream = event => this._remoteStreamRemoved(event.stream);
     }
+
+
     this.onsignalingstatechange = null;
     this.peerconnection.onsignalingstatechange = event => {
         this.trace('onsignalingstatechange', this.signalingState);
@@ -502,18 +530,21 @@ TraceablePeerConnection.prototype.getConnectionState = function() {
  */
 TraceablePeerConnection.prototype._getDesiredMediaDirection = function(
         mediaType) {
-    let mediaTransferActive = true;
+    const hasLocalSource = this.hasAnyTracksOfType(mediaType);
 
-    if (mediaType === MediaType.AUDIO) {
-        mediaTransferActive = this.audioTransferActive;
-    } else if (mediaType === MediaType.VIDEO) {
-        mediaTransferActive = this.videoTransferActive;
+    if (this._usesUnifiedPlan) {
+        return isAddOperation
+            ? hasLocalSource ? MediaDirection.SENDRECV : MediaDirection.SENDONLY
+            : hasLocalSource ? MediaDirection.RECVONLY : MediaDirection.INACTIVE;
     }
+
+    const mediaTransferActive = mediaType === MediaType.AUDIO ? this.audioTransferActive : this.videoTransferActive;
+
     if (mediaTransferActive) {
-        return this.hasAnyTracksOfType(mediaType) ? 'sendrecv' : 'recvonly';
+        return hasLocalSource ? MediaDirection.SENDRECV : MediaDirection.RECVONLY;
     }
 
-    return 'inactive';
+    return MediaDirection.INACTIVE;
 };
 
 /**
@@ -731,37 +762,157 @@ TraceablePeerConnection.prototype.getSsrcByTrackId = function(id) {
  * @param {MediaStream} stream the WebRTC MediaStream for remote participant
  */
 TraceablePeerConnection.prototype._remoteStreamAdded = function(stream) {
-    const streamId = RTC.getStreamID(stream);
+    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
+    // const streamId = RTC.getStreamID(stream);
 
-    if (!RTC.isUserStreamById(streamId)) {
-        logger.info(
-            `${this} ignored remote 'stream added' event for non-user stream`
-             + `id: ${streamId}`);
+    // if (!RTC.isUserStreamById(streamId)) {
+    //     logger.info(
+    //         `${this} ignored remote 'stream added' event for non-user stream`
+    //          + `id: ${streamId}`);
+
+    //     return;
+    // }
+
+    // // Bind 'addtrack'/'removetrack' event handlers
+    // if (browser.isChromiumBased()) {
+    //     stream.onaddtrack = event => {
+    //         this._remoteTrackAdded(stream, event.track);
+    //     };
+    //     stream.onremovetrack = event => {
+    //         this._remoteTrackRemoved(stream, event.track);
+    //     };
+    // }
+
+    // // Call remoteTrackAdded for each track in the stream
+    // const streamAudioTracks = stream.getAudioTracks();
+
+    // for (const audioTrack of streamAudioTracks) {
+    //     this._remoteTrackAdded(stream, audioTrack);
+    // }
+    // const streamVideoTracks = stream.getVideoTracks();
+
+    // for (const videoTrack of streamVideoTracks) {
+    //     this._remoteTrackAdded(stream, videoTrack);
+    // }
+
+    const streamId = RTC.getStreamID(stream);
+    const mediaType = track.kind;
+
+    if (!this.isP2P && !RTC.isUserStreamById(streamId)) {
+        logger.info(`${this} ignored remote 'stream added' event for non-user stream[id=${streamId}]`);
+
+        return;
+    }
+    logger.info(`${this} adding remote track for stream[id=${streamId},type=${mediaType}]`);
+
+    // look up an associated JID for a stream id
+    if (!mediaType) {
+        GlobalOnErrorHandler.callErrorHandler(
+            new Error(
+                `MediaType undefined for remote track, stream id: ${streamId}`
+            ));
+
+        // Abort
+        return;
+    }
+
+    const remoteSDP = browser.usesUnifiedPlan()
+        ? new SDP(this.peerconnection.remoteDescription.sdp)
+        : new SDP(this.remoteDescription.sdp);
+    let mediaLines;
+
+    // In unified plan mode, find the matching mline using 'mid' if its availble, otherwise use the
+    // 'msid' attribute of the stream.
+    if (browser.usesUnifiedPlan()) {
+        if (transceiver && transceiver.mid) {
+            const mid = transceiver.mid;
+
+            mediaLines = remoteSDP.media.filter(mls => SDPUtil.findLine(mls, `a=mid:${mid}`));
+        } else {
+            mediaLines = remoteSDP.media.filter(mls => {
+                const msid = SDPUtil.findLine(mls, 'a=msid:');
+
+                return typeof msid !== 'undefined' && streamId === msid.substring(7).split(' ')[0];
+            });
+        }
+    } else {
+        mediaLines = remoteSDP.media.filter(mls => mls.startsWith(`m=${mediaType}`));
+    }
+
+    if (!mediaLines.length) {
+        GlobalOnErrorHandler.callErrorHandler(
+            new Error(`No media lines found in remote SDP for remote stream[id=${streamId},type=${mediaType}]`));
+
+        // Abort
+        return;
+    }
+
+    let ssrcLines = SDPUtil.findLines(mediaLines[0], 'a=ssrc:');
+
+    ssrcLines
+        = ssrcLines.filter(line => line.indexOf(`msid:${streamId}`) !== -1);
+    if (!ssrcLines.length) {
+        GlobalOnErrorHandler.callErrorHandler(
+            new Error(`No SSRC lines found in remote SDP for remote stream[msid=${streamId},type=${mediaType}]`));
+
+        // Abort
+        return;
+    }
+
+    // FIXME the length of ssrcLines[0] not verified, but it will fail
+    // with global error handler anyway
+    const ssrcStr = ssrcLines[0].substring(7).split(' ')[0];
+    const trackSsrc = Number(ssrcStr);
+    const ownerEndpointId = this.signalingLayer.getSSRCOwner(trackSsrc);
+
+    if (isNaN(trackSsrc) || trackSsrc < 0) {
+        GlobalOnErrorHandler.callErrorHandler(
+            new Error(
+                `Invalid SSRC for remote stream[ssrc=${trackSsrc},id=${streamId},type=${mediaType}]`));
+
+        // Abort
+        return;
+    } else if (!ownerEndpointId) {
+        GlobalOnErrorHandler.callErrorHandler(
+            new Error(
+                `No SSRC owner known for remote stream[ssrc=${trackSsrc},id=${streamId},type=${mediaType}]`));
+
+        // Abort
+        return;
+    }
+
+
+    let sourceName;
+
+    if (FeatureFlags.isSourceNameSignalingEnabled()) {
+        sourceName = this.signalingLayer.getTrackSourceName(trackSsrc);
+
+        // If source name was not signaled, we'll generate one which allows testing signaling
+        // when mixing legacy(mobile) with new clients.
+        if (!sourceName) {
+            sourceName = this.signalingLayer.getSourceNameForJitsiTrack(ownerEndpointId, mediaType, 0);
+        }
+    }
+
+    // eslint-disable-next-line no-undef
+    logger.info(`${this} creating remote track[endpoint=${ownerEndpointId},ssrc=${trackSsrc},`
+        + `type=${mediaType},sourceName=${sourceName}]`);
+
+    const peerMediaInfo = this.signalingLayer.getPeerMediaInfo(ownerEndpointId, mediaType, sourceName);
+
+    if (!peerMediaInfo) {
+        GlobalOnErrorHandler.callErrorHandler(
+            new Error(`${this}: no peer media info available for ${ownerEndpointId}`));
 
         return;
     }
 
-    // Bind 'addtrack'/'removetrack' event handlers
-    if (browser.isChromiumBased()) {
-        stream.onaddtrack = event => {
-            this._remoteTrackAdded(stream, event.track);
-        };
-        stream.onremovetrack = event => {
-            this._remoteTrackRemoved(stream, event.track);
-        };
-    }
+    const muted = peerMediaInfo.muted;
+    const videoType = peerMediaInfo.videoType; // can be undefined
 
-    // Call remoteTrackAdded for each track in the stream
-    const streamAudioTracks = stream.getAudioTracks();
-
-    for (const audioTrack of streamAudioTracks) {
-        this._remoteTrackAdded(stream, audioTrack);
-    }
-    const streamVideoTracks = stream.getVideoTracks();
-
-    for (const videoTrack of streamVideoTracks) {
-        this._remoteTrackAdded(stream, videoTrack);
-    }
+    // eslint-disable-next-line no-undef
+    this._createRemoteTrack(
+        ownerEndpointId, stream, track, mediaType, videoType, trackSsrc, muted, sourceName);
 };
 
 
@@ -1004,37 +1155,36 @@ TraceablePeerConnection.prototype._remoteTrackRemoved = function(
     const streamId = RTC.getStreamID(stream);
     const trackId = track && RTC.getTrackID(track);
 
-    logger.info(`${this} - remote track removed: ${streamId}, ${trackId}`);
+    if (!RTC.isUserStreamById(streamId)) {
+        logger.info(`${this} ignored remote 'stream removed' event for non-user stream[id=${streamId}]`);
+
+        return;
+    }
 
     if (!streamId) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(`${this} remote track removal failed - no stream ID`));
+        GlobalOnErrorHandler.callErrorHandler(new Error(`${this} remote track removal failed - no stream ID`));
 
         return;
     }
 
     if (!trackId) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(`${this} remote track removal failed - no track ID`));
+        GlobalOnErrorHandler.callErrorHandler(new Error(`${this} remote track removal failed - no track ID`));
 
         return;
     }
 
-    if (!this._removeRemoteTrackById(streamId, trackId)) {
-        // NOTE this warning is always printed when user leaves the room,
-        // because we remove remote tracks manually on MUC member left event,
-        // before the SSRCs are removed by Jicofo. In most cases it is fine to
-        // ignore this warning, but still it's better to keep it printed for
-        // debugging purposes.
-        //
-        // We could change the behaviour to emit track removed only from here,
-        // but the order of the events will change and consuming apps could
-        // behave unexpectedly (the "user left" event would come before "track
-        // removed" events).
-        logger.warn(
-            `${this} Removed track not found for msid: ${streamId},
-             track id: ${trackId}`);
+    const toBeRemoved = this.getRemoteTracks().find(
+        remoteTrack => remoteTrack.getStreamId() === streamId
+        && remoteTrack.getTrackId() === trackId);
+
+    if (!toBeRemoved) {
+        GlobalOnErrorHandler.callErrorHandler(new Error(`${this} remote track removal failed - track not found`));
+
+        return;
     }
+
+    logger.info(`${this} remote track removed stream[id=${streamId},trackId=${trackId}]`);
+    this._removeRemoteTrack(toBeRemoved);
 };
 
 /**
@@ -1679,7 +1829,7 @@ TraceablePeerConnection.prototype.addTrack = function(track, isInitiator = false
 
     // For p2p unified case, use addTransceiver API to add the tracks on the peerconnection.
     // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
-    if (browser.usesUnifiedPlan() && this.isP2P) {
+    if (browser.usesUnifiedPlan()) {
         try {
             this.tpcUtils.addTrack(track, isInitiator);
         } catch (error) {
@@ -2765,8 +2915,9 @@ TraceablePeerConnection.prototype._createOfferOrAnswer = function(
             // desktop tracks only when the testing flag for maxbitrates
             // in config.js is disabled.
             if (this.isSimulcastOn() && browser.usesSdpMungingForSimulcast()
-                && (!this.options.capScreenshareBitrate
-                || (this.options.capScreenshareBitrate && hasCameraTrack(this)))) {
+                && (localVideoTrack?.getVideoType() === VideoType.CAMERA
+                || browser.usesUnifiedPlan()
+                || !this.isSharingLowFpsScreen())) {
                 // eslint-disable-next-line no-param-reassign
                 resultSdp = this.simulcast.mungeLocalDescription(resultSdp);
                 this.trace(
@@ -2890,7 +3041,7 @@ TraceablePeerConnection.prototype._extractPrimarySSRC = function(ssrcObj) {
  */
 TraceablePeerConnection.prototype._processLocalSSRCsMap = function(ssrcMap) {
     for (const track of this.localTracks.values()) {
-        const trackMSID = track.storedMSID;
+        const trackMSID = browser.usesUnifiedPlan() ? track.getType() : track.storedMSID;
 
         if (ssrcMap.has(trackMSID)) {
             const newSSRC = ssrcMap.get(trackMSID);
