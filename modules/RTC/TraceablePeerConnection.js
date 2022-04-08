@@ -759,157 +759,35 @@ TraceablePeerConnection.prototype.getSsrcByTrackId = function(id) {
  * @param {MediaStream} stream the WebRTC MediaStream for remote participant
  */
 TraceablePeerConnection.prototype._remoteStreamAdded = function(stream) {
-    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
-    // const streamId = RTC.getStreamID(stream);
-
-    // if (!RTC.isUserStreamById(streamId)) {
-    //     logger.info(
-    //         `${this} ignored remote 'stream added' event for non-user stream`
-    //          + `id: ${streamId}`);
-
-    //     return;
-    // }
-
-    // // Bind 'addtrack'/'removetrack' event handlers
-    // if (browser.isChromiumBased()) {
-    //     stream.onaddtrack = event => {
-    //         this._remoteTrackAdded(stream, event.track);
-    //     };
-    //     stream.onremovetrack = event => {
-    //         this._remoteTrackRemoved(stream, event.track);
-    //     };
-    // }
-
-    // // Call remoteTrackAdded for each track in the stream
-    // const streamAudioTracks = stream.getAudioTracks();
-
-    // for (const audioTrack of streamAudioTracks) {
-    //     this._remoteTrackAdded(stream, audioTrack);
-    // }
-    // const streamVideoTracks = stream.getVideoTracks();
-
-    // for (const videoTrack of streamVideoTracks) {
-    //     this._remoteTrackAdded(stream, videoTrack);
-    // }
-
     const streamId = RTC.getStreamID(stream);
-    const mediaType = track.kind;
 
     if (!RTC.isUserStreamById(streamId)) {
         logger.info(`${this} ignored remote 'stream added' event for non-user stream[id=${streamId}]`);
 
         return;
     }
-    logger.info(`${this} adding remote track for stream[id=${streamId},type=${mediaType}]`);
 
-    // look up an associated JID for a stream id
-    if (!mediaType) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(
-                `MediaType undefined for remote track, stream id: ${streamId}`
-            ));
-
-        // Abort
-        return;
+    // Bind 'addtrack'/'removetrack' event handlers
+    if (browser.isChromiumBased()) {
+        stream.onaddtrack = event => {
+            this._remoteTrackAdded(stream, event.track);
+        };
+        stream.onremovetrack = event => {
+            this._remoteTrackRemoved(stream, event.track);
+        };
     }
 
-    const remoteSDP = browser.usesUnifiedPlan()
-        ? new SDP(this.peerconnection.remoteDescription.sdp)
-        : new SDP(this.remoteDescription.sdp);
-    let mediaLines;
+    // Call remoteTrackAdded for each track in the stream
+    const streamAudioTracks = stream.getAudioTracks();
 
-    // In unified plan mode, find the matching mline using 'mid' if its availble, otherwise use the
-    // 'msid' attribute of the stream.
-    if (browser.usesUnifiedPlan()) {
-        if (transceiver && transceiver.mid) {
-            const mid = transceiver.mid;
-
-            mediaLines = remoteSDP.media.filter(mls => SDPUtil.findLine(mls, `a=mid:${mid}`));
-        } else {
-            mediaLines = remoteSDP.media.filter(mls => {
-                const msid = SDPUtil.findLine(mls, 'a=msid:');
-
-                return typeof msid !== 'undefined' && streamId === msid.substring(7).split(' ')[0];
-            });
-        }
-    } else {
-        mediaLines = remoteSDP.media.filter(mls => mls.startsWith(`m=${mediaType}`));
+    for (const audioTrack of streamAudioTracks) {
+        this._remoteTrackAdded(stream, audioTrack);
     }
+    const streamVideoTracks = stream.getVideoTracks();
 
-    if (!mediaLines.length) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(`No media lines found in remote SDP for remote stream[id=${streamId},type=${mediaType}]`));
-
-        // Abort
-        return;
+    for (const videoTrack of streamVideoTracks) {
+        this._remoteTrackAdded(stream, videoTrack);
     }
-
-    let ssrcLines = SDPUtil.findLines(mediaLines[0], 'a=ssrc:');
-
-    ssrcLines
-        = ssrcLines.filter(line => line.indexOf(`msid:${streamId}`) !== -1);
-    if (!ssrcLines.length) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(`No SSRC lines found in remote SDP for remote stream[msid=${streamId},type=${mediaType}]`));
-
-        // Abort
-        return;
-    }
-
-    // FIXME the length of ssrcLines[0] not verified, but it will fail
-    // with global error handler anyway
-    const ssrcStr = ssrcLines[0].substring(7).split(' ')[0];
-    const trackSsrc = Number(ssrcStr);
-    const ownerEndpointId = this.signalingLayer.getSSRCOwner(trackSsrc);
-
-    if (isNaN(trackSsrc) || trackSsrc < 0) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(
-                `Invalid SSRC for remote stream[ssrc=${trackSsrc},id=${streamId},type=${mediaType}]`));
-
-        // Abort
-        return;
-    } else if (!ownerEndpointId) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(
-                `No SSRC owner known for remote stream[ssrc=${trackSsrc},id=${streamId},type=${mediaType}]`));
-
-        // Abort
-        return;
-    }
-
-
-    let sourceName;
-
-    if (FeatureFlags.isSourceNameSignalingEnabled()) {
-        sourceName = this.signalingLayer.getTrackSourceName(trackSsrc);
-
-        // If source name was not signaled, we'll generate one which allows testing signaling
-        // when mixing legacy(mobile) with new clients.
-        if (!sourceName) {
-            sourceName = this.signalingLayer.getSourceNameForJitsiTrack(ownerEndpointId, mediaType, 0);
-        }
-    }
-
-    // eslint-disable-next-line no-undef
-    logger.info(`${this} creating remote track[endpoint=${ownerEndpointId},ssrc=${trackSsrc},`
-        + `type=${mediaType},sourceName=${sourceName}]`);
-
-    const peerMediaInfo = this.signalingLayer.getPeerMediaInfo(ownerEndpointId, mediaType, sourceName);
-
-    if (!peerMediaInfo) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(`${this}: no peer media info available for ${ownerEndpointId}`));
-
-        return;
-    }
-
-    const muted = peerMediaInfo.muted;
-    const videoType = peerMediaInfo.videoType; // can be undefined
-
-    // eslint-disable-next-line no-undef
-    this._createRemoteTrack(
-        ownerEndpointId, stream, track, mediaType, videoType, trackSsrc, muted, sourceName);
 };
 
 
@@ -928,7 +806,7 @@ TraceablePeerConnection.prototype._remoteTrackAdded = function(stream, track, tr
     const streamId = RTC.getStreamID(stream);
     const mediaType = track.kind;
 
-    if (!RTC.isUserStreamById(streamId)) {
+    if (!this.isP2P && !RTC.isUserStreamById(streamId)) {
         logger.info(
             `${this} ignored remote 'stream added' event for non-user stream`
              + `id: ${streamId}`);
