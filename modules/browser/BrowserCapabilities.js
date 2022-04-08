@@ -188,7 +188,7 @@ export default class BrowserCapabilities extends BrowserDetection {
      * @returns {boolean}
      */
     usesPlanB() {
-        return isReactNative();//!this.usesUnifiedPlan();
+        return this.isReactNative();//!this.usesUnifiedPlan();
     }
 
     /**
@@ -219,7 +219,7 @@ export default class BrowserCapabilities extends BrowserDetection {
         }
         // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
         // return false;
-        return !isReactNative();
+        return !this.isReactNative();
     }
 
     /**
@@ -320,7 +320,7 @@ export default class BrowserCapabilities extends BrowserDetection {
      * @returns {boolean}
      */
     supportsSdpSemantics() {
-        return isReactNative();//this.isChromiumBased() && this._getChromiumBasedVersion() >= 65;
+        return this.isReactNative();//this.isChromiumBased() && this._getChromiumBasedVersion() >= 65;
     }
 
     /**
