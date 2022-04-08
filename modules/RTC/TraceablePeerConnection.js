@@ -795,7 +795,7 @@ TraceablePeerConnection.prototype._remoteStreamAdded = function(stream) {
     const streamId = RTC.getStreamID(stream);
     const mediaType = track.kind;
 
-    if (!this.isP2P && !RTC.isUserStreamById(streamId)) {
+    if (!RTC.isUserStreamById(streamId)) {
         logger.info(`${this} ignored remote 'stream added' event for non-user stream[id=${streamId}]`);
 
         return;
