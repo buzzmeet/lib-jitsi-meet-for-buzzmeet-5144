@@ -525,13 +525,10 @@ export default class RTC extends Listenable {
         // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
         iceConfig.sdpSemantics = 'unified-plan';
 
-        if (browser.isReactNative()) {
+        if (browser.supportsSdpSemantics()) {
             logger.debug('WebRTC application is running in plan-b mode');
             pcConfig.sdpSemantics = 'plan-b';
         }
-        //if (browser.supportsSdpSemantics()) {
-            
-        //}
 
         // Set the RTCBundlePolicy to max-bundle so that only one set of ice candidates is generated.
         // The default policy generates separate ice candidates for audio and video connections.
