@@ -853,34 +853,46 @@ class RTCUtils extends Listenable {
 
         this.enumerateDevices = initEnumerateDevicesWithCallback();
 
-        if (browser.usesNewGumFlow()) {
+        if (browser.usesUnifiedPlan()) {
             this.RTCPeerConnectionType = RTCPeerConnection;
 
             this.attachMediaStream
                 = wrapAttachMediaStream((element, stream) => {
-                    if (element) {
-                        element.srcObject = stream;
-                    }
+                    defaultSetVideoSrc(element, stream);
+
+                    return element;
                 });
 
-            this.getStreamID = ({ id }) => id;
-            this.getTrackID = ({ id }) => id;
-        } else if (browser.isReactNative()) {
-            this.RTCPeerConnectionType = RTCPeerConnection;
-
-            this.attachMediaStream = undefined; // Unused on React Native.
-
             this.getStreamID = function({ id }) {
-                // The react-native-webrtc implementation that we use at the
-                // time of this writing returns a number for the id of
-                // MediaStream. Let's just say that a number contains no special
-                // characters.
                 return (
                     typeof id === 'number'
                         ? id
                         : SDPUtil.filterSpecialChars(id));
             };
             this.getTrackID = ({ id }) => id;
+
+            if (!MediaStream.prototype.getVideoTracks) {
+                MediaStream.prototype.getVideoTracks = function() {
+                    return this.videoTracks;
+                };
+            }
+            if (!MediaStream.prototype.getAudioTracks) {
+                MediaStream.prototype.getAudioTracks = function() {
+                    return this.audioTracks;
+                };
+            }
+        } else if (browser.isReactNative()) {
+            this.RTCPeerConnectionType = RTCPeerConnection;
+
+            this.attachMediaStream = undefined; // Unused on React Native.
+
+            this.getStreamID = function({ id }) {
+                return (
+                    typeof id === 'number'
+                        ? id
+                        : SDPUtil.filterSpecialChars(id));
+            };
+            
         } else {
             const message = 'Endpoint does not appear to be WebRTC-capable';
 
