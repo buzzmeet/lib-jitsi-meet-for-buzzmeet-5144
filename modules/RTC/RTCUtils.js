@@ -853,7 +853,8 @@ class RTCUtils extends Listenable {
 
         this.enumerateDevices = initEnumerateDevicesWithCallback();
 
-        if (browser.usesNewGumFlow() || browser.isReactNative()) {
+        if (browser.usesNewGumFlow()) {
+            console.error("RTCUtils > usesNewGumFlow")
             this.RTCPeerConnectionType = RTCPeerConnection;
 
             this.attachMediaStream
@@ -866,8 +867,8 @@ class RTCUtils extends Listenable {
             this.getStreamID = ({ id }) => id;
             this.getTrackID = ({ id }) => id;
         } else if (browser.isChromiumBased() // this is chrome < 61
-                ) {
-
+                || browser.isReactNative()) {
+                    console.error("RTCUtils > isChromiumBased || isReactNative")
             this.RTCPeerConnectionType = RTCPeerConnection;
 
             this.attachMediaStream
@@ -902,6 +903,7 @@ class RTCUtils extends Listenable {
                 };
             }
         } else {
+            console.error("RTCUtils > else")
             const message = 'Endpoint does not appear to be WebRTC-capable';
 
             logger.error(message);
