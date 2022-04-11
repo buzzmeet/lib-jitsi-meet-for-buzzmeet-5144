@@ -865,22 +865,13 @@ class RTCUtils extends Listenable {
 
             this.getStreamID = ({ id }) => id;
             this.getTrackID = ({ id }) => id;
-        } else if (browser.isChromiumBased() // this is chrome < 61
-                || browser.isReactNative()) {
-
+        } else if (browser.isReactNative()) {
             this.RTCPeerConnectionType = RTCPeerConnection;
 
-            this.attachMediaStream
-                = wrapAttachMediaStream((element, stream) => {
-                    defaultSetVideoSrc(element, stream);
-
-                    return element;
-                });
+            this.attachMediaStream = undefined; // Unused on React Native.
 
             this.getStreamID = function({ id }) {
-                // A. MediaStreams from FF endpoints have the characters '{' and
-                // '}' that make jQuery choke.
-                // B. The react-native-webrtc implementation that we use at the
+                // The react-native-webrtc implementation that we use at the
                 // time of this writing returns a number for the id of
                 // MediaStream. Let's just say that a number contains no special
                 // characters.
@@ -890,17 +881,6 @@ class RTCUtils extends Listenable {
                         : SDPUtil.filterSpecialChars(id));
             };
             this.getTrackID = ({ id }) => id;
-
-            if (!MediaStream.prototype.getVideoTracks) {
-                MediaStream.prototype.getVideoTracks = function() {
-                    return this.videoTracks;
-                };
-            }
-            if (!MediaStream.prototype.getAudioTracks) {
-                MediaStream.prototype.getAudioTracks = function() {
-                    return this.audioTracks;
-                };
-            }
         } else {
             const message = 'Endpoint does not appear to be WebRTC-capable';
 
