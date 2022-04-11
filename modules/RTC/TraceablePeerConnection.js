@@ -664,27 +664,18 @@ TraceablePeerConnection.prototype.getRemoteTracks = function(
     const endpoints
         = endpointId ? [ endpointId ] : this.remoteTracks.keys();
 
-    for (const endpoint of endpoints) {
-        const endpointTrackMap = this.remoteTracks.get(endpoint);
-
-        if (!endpointTrackMap) {
-
-            // Otherwise an empty Map() would have to be allocated above
-            // eslint-disable-next-line no-continue
-            continue;
-        }
-
-        for (const trackMediaType of endpointTrackMap.keys()) {
-            // per media type filtering
-            if (!mediaType || mediaType === trackMediaType) {
-                const mediaTrack = endpointTrackMap.get(trackMediaType);
-
-                if (mediaTrack) {
-                    remoteTracks = remoteTracks.concat(Array.from(endpointTracksByMediaType.get(trackMediaType)));
+        for (const endpoint of endpoints) {
+            const endpointTracksByMediaType = this.remoteTracks.get(endpoint);
+    
+            if (endpointTracksByMediaType) {
+                for (const trackMediaType of endpointTracksByMediaType.keys()) {
+                    // per media type filtering
+                    if (!mediaType || mediaType === trackMediaType) {
+                        remoteTracks = remoteTracks.concat(Array.from(endpointTracksByMediaType.get(trackMediaType)));
+                    }
                 }
             }
         }
-    }
 
     return remoteTracks;
 };
