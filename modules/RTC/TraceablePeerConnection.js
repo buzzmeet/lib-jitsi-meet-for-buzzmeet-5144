@@ -660,7 +660,7 @@ TraceablePeerConnection.prototype.hasAnyTracksOfType = function(mediaType) {
 TraceablePeerConnection.prototype.getRemoteTracks = function(
         endpointId,
         mediaType) {
-    const remoteTracks = [];
+    let remoteTracks = [];
     const endpoints
         = endpointId ? [ endpointId ] : this.remoteTracks.keys();
 
