@@ -680,7 +680,7 @@ TraceablePeerConnection.prototype.getRemoteTracks = function(
                 const mediaTrack = endpointTrackMap.get(trackMediaType);
 
                 if (mediaTrack) {
-                    remoteTracks.push(mediaTrack);
+                    remoteTracks = remoteTracks.concat(Array.from(endpointTracksByMediaType.get(trackMediaType)));
                 }
             }
         }
