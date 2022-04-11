@@ -178,6 +178,10 @@ export default class ChatRoom extends Listenable {
         this.presenceUpdateTime = Date.now();
     }
 
+    getLastPresence(mucNick) {
+        return this.lastPresences[`${this.roomjid}/${mucNick}`];
+    }
+
     /**
      * Joins the chat room.
      * @param {string} password - Password to unlock room on joining.
