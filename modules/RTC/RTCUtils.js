@@ -181,187 +181,65 @@ function setResolutionConstraints(
  * enable system audio screen sharing.
  */
 function getConstraints(um, options = {}) {
-    const constraints = {
-        audio: false,
-        video: false
-    };
-
-    // Don't mix new and old style settings for Chromium as this leads
-    // to TypeError in new Chromium versions. @see
-    // https://bugs.chromium.org/p/chromium/issues/detail?id=614716
-    // This is a temporary solution, in future we will fully split old and
-    // new style constraints when new versions of Chromium and Firefox will
-    // have stable support of new constraints format. For more information
-    // @see https://github.com/jitsi/lib-jitsi-meet/pull/136
-    const isNewStyleConstraintsSupported
-        = browser.isFirefox()
-            || browser.isSafari()
-            || browser.isReactNative();
+    const constraints = clonedeep(options.constraints || DEFAULT_CONSTRAINTS);
 
     if (um.indexOf('video') >= 0) {
-        // same behaviour as true
-        constraints.video = { mandatory: {},
-            optional: [] };
+        // The "resolution" option is a shortcut and takes precendence.
+        if (Resolutions[options.resolution]) {
+            const r = Resolutions[options.resolution];
 
-        if (options.cameraDeviceId) {
-            if (isNewStyleConstraintsSupported) {
-                // New style of setting device id.
-                constraints.video.deviceId = options.cameraDeviceId;
+            constraints.video.height = { ideal: r.height };
+            constraints.video.width = { ideal: r.width };
+        }
+
+        if (!constraints.video) {
+            constraints.video = {};
+        }
+
+        // Override the constraints on Safari because of the following webkit bug.
+        // https://bugs.webkit.org/show_bug.cgi?id=210932
+        // Camera doesn't start on older macOS versions if min/max constraints are specified.
+        // TODO: remove this hack when the bug fix is available on Mojave, Sierra and High Sierra.
+        if (browser.isWebKitBased()) {
+            if (constraints.video.height && constraints.video.height.ideal) {
+                constraints.video.height = { ideal: constraints.video.height.ideal };
+            } else {
+                logger.warn('Ideal camera height missing, camera may not start properly');
             }
-
-            // Old style.
-            constraints.video.mandatory.sourceId = options.cameraDeviceId;
+            if (constraints.video.width && constraints.video.width.ideal) {
+                constraints.video.width = { ideal: constraints.video.width.ideal };
+            } else {
+                logger.warn('Ideal camera width missing, camera may not start properly');
+            }
+        }
+        if (options.cameraDeviceId) {
+            constraints.video.deviceId = options.cameraDeviceId;
         } else {
-            // Prefer the front i.e. user-facing camera (to the back i.e.
-            // environment-facing camera, for example).
-            // TODO: Maybe use "exact" syntax if options.facingMode is defined,
-            // but this probably needs to be decided when updating other
-            // constraints, as we currently don't use "exact" syntax anywhere.
             const facingMode = options.facingMode || CameraFacingMode.USER;
 
-            if (isNewStyleConstraintsSupported) {
-                constraints.video.facingMode = facingMode;
-            }
-            constraints.video.optional.push({
-                facingMode
-            });
+            constraints.video.facingMode = facingMode;
         }
-
-        if (options.minFps || options.maxFps || options.fps) {
-            // for some cameras it might be necessary to request 30fps
-            // so they choose 30fps mjpg over 10fps yuy2
-            if (options.minFps || options.fps) {
-                // Fall back to options.fps for backwards compatibility
-                options.minFps = options.minFps || options.fps;
-                constraints.video.mandatory.minFrameRate = options.minFps;
-            }
-            if (options.maxFps) {
-                constraints.video.mandatory.maxFrameRate = options.maxFps;
-            }
-        }
-
-        setResolutionConstraints(
-            constraints, isNewStyleConstraintsSupported, options.resolution);
+    } else {
+        constraints.video = false;
     }
+
     if (um.indexOf('audio') >= 0) {
-        if (browser.isReactNative()) {
-            // The react-native-webrtc project that we're currently using
-            // expects the audio constraint to be a boolean.
-            constraints.audio = true;
-        } else if (browser.isFirefox()) {
-            if (options.micDeviceId) {
-                constraints.audio = {
-                    mandatory: {},
-                    deviceId: options.micDeviceId, // new style
-                    optional: [ {
-                        sourceId: options.micDeviceId // old style
-                    } ] };
-            } else {
-                constraints.audio = true;
-            }
-        } else {
-            // same behaviour as true
-            constraints.audio = { mandatory: {},
-                optional: [] };
-            if (options.micDeviceId) {
-                if (isNewStyleConstraintsSupported) {
-                    // New style of setting device id.
-                    constraints.audio.deviceId = options.micDeviceId;
-                }
-
-                // Old style.
-                constraints.audio.optional.push({
-                    sourceId: options.micDeviceId
-                });
-            }
-
-            // if it is good enough for hangouts...
-            constraints.audio.optional.push(
-                { echoCancellation: !disableAEC && !disableAP },
-                { googEchoCancellation: !disableAEC && !disableAP },
-                { googAutoGainControl: !disableAGC && !disableAP },
-                { googNoiseSuppression: !disableNS && !disableAP },
-                { googHighpassFilter: !disableHPF && !disableAP },
-                { googNoiseSuppression2: !disableNS && !disableAP },
-                { googEchoCancellation2: !disableAEC && !disableAP },
-                { googAutoGainControl2: !disableAGC && !disableAP }
-            );
+        if (!constraints.audio || typeof constraints.audio === 'boolean') {
+            constraints.audio = {};
         }
-    }
-    if (um.indexOf('screen') >= 0) {
-        if (browser.isChrome()) {
-            constraints.video = {
-                mandatory: getSSConstraints({
-                    ...options,
-                    source: 'screen'
-                }),
-                optional: []
-            };
 
-        } else if (browser.isFirefox()) {
-            constraints.video = {
-                mozMediaSource: 'window',
-                mediaSource: 'window',
-                frameRate: options.frameRate || {
-                    min: SS_DEFAULT_FRAME_RATE,
-                    max: SS_DEFAULT_FRAME_RATE
-                }
-            };
-
-        } else {
-            const errmsg
-                = '\'screen\' WebRTC media source is supported only in Chrome'
-                    + ' and Firefox';
-
-            GlobalOnErrorHandler.callErrorHandler(new Error(errmsg));
-            logger.error(errmsg);
-        }
-    }
-    if (um.indexOf('desktop') >= 0) {
-        constraints.video = {
-            mandatory: getSSConstraints({
-                ...options,
-                source: 'desktop'
-            }),
-            optional: []
+        constraints.audio = {
+            autoGainControl: !disableAGC && !disableAP,
+            deviceId: options.micDeviceId,
+            echoCancellation: !disableAEC && !disableAP,
+            noiseSuppression: !disableNS && !disableAP
         };
 
-        // Audio screen sharing for electron only works for screen type devices.
-        // i.e. when the user shares the whole desktop.
-        if (browser.isElectron() && options.screenShareAudio
-            && (options.desktopStream.indexOf('screen') >= 0)) {
-
-            // Provide constraints as described by the electron desktop capturer
-            // documentation here:
-            // https://www.electronjs.org/docs/api/desktop-capturer
-            // Note. The documentation specifies that chromeMediaSourceId should not be present
-            // which, in the case a users has multiple monitors, leads to them being shared all
-            // at once. However we tested with chromeMediaSourceId present and it seems to be
-            // working properly and also takes care of the previously mentioned issue.
-            constraints.audio = { mandatory: {
-                chromeMediaSource: constraints.video.mandatory.chromeMediaSource
-            } };
+        if (stereo) {
+            Object.assign(constraints.audio, { channelCount: 2 });
         }
-    }
-
-    if (options.bandwidth) {
-        if (!constraints.video) {
-            // same behaviour as true
-            constraints.video = { mandatory: {},
-                optional: [] };
-        }
-        constraints.video.optional.push({ bandwidth: options.bandwidth });
-    }
-
-    // we turn audio for both audio and video tracks, the fake audio & video
-    // seems to work only when enabled in one getUserMedia call, we cannot get
-    // fake audio separate by fake video this later can be a problem with some
-    // of the tests
-    if (browser.isFirefox() && options.firefox_fake_device) {
-        // seems to be fixed now, removing this experimental fix, as having
-        // multiple audio tracks brake the tests
-        // constraints.audio = true;
-        constraints.fake = true;
+    } else {
+        constraints.audio = false;
     }
 
     return constraints;
@@ -853,7 +731,24 @@ class RTCUtils extends Listenable {
 
         this.enumerateDevices = initEnumerateDevicesWithCallback();
 
-        if (browser.usesNewGumFlow()) {
+        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.11
+        if (browser.isReactNative()) {
+            this.RTCPeerConnectionType = RTCPeerConnection;
+
+            this.attachMediaStream = undefined; // Unused on React Native.
+
+            this.getStreamID = function({ id }) {
+                // The react-native-webrtc implementation that we use at the
+                // time of this writing returns a number for the id of
+                // MediaStream. Let's just say that a number contains no special
+                // characters.
+                return (
+                    typeof id === 'number'
+                        ? id
+                        : SDPUtil.filterSpecialChars(id));
+            };
+            this.getTrackID = ({ id }) => id;
+        } else {
             this.RTCPeerConnectionType = RTCPeerConnection;
 
             this.attachMediaStream
@@ -865,47 +760,6 @@ class RTCUtils extends Listenable {
 
             this.getStreamID = ({ id }) => id;
             this.getTrackID = ({ id }) => id;
-        } else if (browser.isChromiumBased() // this is chrome < 61
-                || browser.isReactNative()) {
-
-            this.RTCPeerConnectionType = RTCPeerConnection;
-
-            this.attachMediaStream
-                = wrapAttachMediaStream((element, stream) => {
-                    defaultSetVideoSrc(element, stream);
-
-                    return element;
-                });
-
-            this.getStreamID = function({ id }) {
-                // A. MediaStreams from FF endpoints have the characters '{' and
-                // '}' that make jQuery choke.
-                // B. The react-native-webrtc implementation that we use at the
-                // time of this writing returns a number for the id of
-                // MediaStream. Let's just say that a number contains no special
-                // characters.
-                return (
-                    typeof id === 'number'
-                        ? id
-                        : SDPUtil.filterSpecialChars(id));
-            };
-            this.getTrackID = ({ id }) => id;
-
-            if (!MediaStream.prototype.getVideoTracks) {
-                MediaStream.prototype.getVideoTracks = function() {
-                    return this.videoTracks;
-                };
-            }
-            if (!MediaStream.prototype.getAudioTracks) {
-                MediaStream.prototype.getAudioTracks = function() {
-                    return this.audioTracks;
-                };
-            }
-        } else {
-            const message = 'Endpoint does not appear to be WebRTC-capable';
-
-            logger.error(message);
-            throw new Error(message);
         }
 
         this._initPCConstraints();
