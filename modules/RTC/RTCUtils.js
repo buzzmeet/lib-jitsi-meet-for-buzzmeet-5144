@@ -853,7 +853,21 @@ class RTCUtils extends Listenable {
 
         this.enumerateDevices = initEnumerateDevicesWithCallback();
 
-        if (browser.usesUnifiedPlan()) {
+        if (browser.usesNewGumFlow() || browser.isReactNative()) {
+            this.RTCPeerConnectionType = RTCPeerConnection;
+
+            this.attachMediaStream
+                = wrapAttachMediaStream((element, stream) => {
+                    if (element) {
+                        element.srcObject = stream;
+                    }
+                });
+
+            this.getStreamID = ({ id }) => id;
+            this.getTrackID = ({ id }) => id;
+        } else if (browser.isChromiumBased() // this is chrome < 61
+                ) {
+
             this.RTCPeerConnectionType = RTCPeerConnection;
 
             this.attachMediaStream
@@ -864,6 +878,12 @@ class RTCUtils extends Listenable {
                 });
 
             this.getStreamID = function({ id }) {
+                // A. MediaStreams from FF endpoints have the characters '{' and
+                // '}' that make jQuery choke.
+                // B. The react-native-webrtc implementation that we use at the
+                // time of this writing returns a number for the id of
+                // MediaStream. Let's just say that a number contains no special
+                // characters.
                 return (
                     typeof id === 'number'
                         ? id
@@ -881,18 +901,6 @@ class RTCUtils extends Listenable {
                     return this.audioTracks;
                 };
             }
-        } else if (browser.isReactNative()) {
-            this.RTCPeerConnectionType = RTCPeerConnection;
-
-            this.attachMediaStream = undefined; // Unused on React Native.
-
-            this.getStreamID = function({ id }) {
-                return (
-                    typeof id === 'number'
-                        ? id
-                        : SDPUtil.filterSpecialChars(id));
-            };
-            
         } else {
             const message = 'Endpoint does not appear to be WebRTC-capable';
 
