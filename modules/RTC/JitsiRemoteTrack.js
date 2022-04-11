@@ -54,7 +54,8 @@ export default class JitsiRemoteTrack extends JitsiTrack {
             videoType,
             ssrc,
             muted,
-            isP2P) {
+            isP2P,
+            sourceName) {
         super(
             conference,
             stream,
@@ -74,6 +75,7 @@ export default class JitsiRemoteTrack extends JitsiTrack {
         this.ownerEndpointId = ownerEndpointId;
         this.muted = muted;
         this.isP2P = isP2P;
+        this._sourceName = sourceName;
 
         logger.debug(`New remote track added: ${this}`);
 

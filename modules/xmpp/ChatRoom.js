@@ -65,7 +65,7 @@ export const parser = {
  * @param pres the presence JSON
  * @param nodeName the name of the node (videomuted, audiomuted, etc)
  */
-function filterNodeFromPresenceJSON(pres, nodeName) {
+export function filterNodeFromPresenceJSON(pres, nodeName) {
     const res = [];
 
     for (let i = 0; i < pres.length; i++) {

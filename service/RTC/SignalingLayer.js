@@ -47,3 +47,27 @@ export default class SignalingLayer extends Listenable {
         return `${endpointId}-${firstLetterOfMediaType}${trackIdx}`;
     }
 }
+
+export function getSourceNameForJitsiTrack(endpointId, mediaType, trackIdx) {
+    const firstLetterOfMediaType = mediaType.substring(0, 1);
+
+    return `${endpointId}-${firstLetterOfMediaType}${trackIdx}`;
+}
+
+export function getMediaTypeFromSourceName(sourceName) {
+    const firstLetterOfMediaTypeIdx = sourceName.indexOf('-') + 1;
+
+    if (firstLetterOfMediaTypeIdx <= 0) {
+        throw new Error(`Invalid source name: ${sourceName}`);
+    }
+
+    const firstLetterOfMediaType = sourceName.substr(firstLetterOfMediaTypeIdx, 1);
+
+    for (const type of Object.values(MediaType)) {
+        if (type.substr(0, 1) === firstLetterOfMediaType) {
+            return type;
+        }
+    }
+
+    throw new Error(`Invalid source name: ${sourceName}`);
+}

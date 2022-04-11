@@ -882,16 +882,27 @@ TraceablePeerConnection.prototype._remoteTrackAdded = function(stream, track, tr
         return;
     }
 
-    logger.log(`${this} associated ssrc`, ownerEndpointId, trackSsrc);
+    let sourceName;
 
-    const peerMediaInfo
-        = this.signalingLayer.getPeerMediaInfo(ownerEndpointId, mediaType);
+    if (FeatureFlags.isSourceNameSignalingEnabled()) {
+        sourceName = this.signalingLayer.getTrackSourceName(trackSsrc);
+
+        // If source name was not signaled, we'll generate one which allows testing signaling
+        // when mixing legacy(mobile) with new clients.
+        if (!sourceName) {
+            sourceName = getSourceNameForJitsiTrack(ownerEndpointId, mediaType, 0);
+        }
+    }
+
+    // eslint-disable-next-line no-undef
+    logger.info(`${this} creating remote track[endpoint=${ownerEndpointId},ssrc=${trackSsrc},`
+        + `type=${mediaType},sourceName=${sourceName}]`);
+
+    const peerMediaInfo = this.signalingLayer.getPeerMediaInfo(ownerEndpointId, mediaType, sourceName);
 
     if (!peerMediaInfo) {
         GlobalOnErrorHandler.callErrorHandler(
-            new Error(
-                `${this}: no peer media info available for ${
-                    ownerEndpointId}`));
+            new Error(`${this}: no peer media info available for ${ownerEndpointId}`));
 
         return;
     }
@@ -899,8 +910,9 @@ TraceablePeerConnection.prototype._remoteTrackAdded = function(stream, track, tr
     const muted = peerMediaInfo.muted;
     const videoType = peerMediaInfo.videoType; // can be undefined
 
+    // eslint-disable-next-line no-undef
     this._createRemoteTrack(
-        ownerEndpointId, stream, track, mediaType, videoType, trackSsrc, muted);
+        ownerEndpointId, stream, track, mediaType, videoType, trackSsrc, muted, sourceName);
 };
 
 // FIXME cleanup params
@@ -918,40 +930,40 @@ TraceablePeerConnection.prototype._remoteTrackAdded = function(stream, track, tr
  * @param {number} ssrc the track's main SSRC number
  * @param {boolean} muted the initial muted status
  */
-TraceablePeerConnection.prototype._createRemoteTrack = function(
+ TraceablePeerConnection.prototype._createRemoteTrack = function(
         ownerEndpointId,
         stream,
         track,
         mediaType,
         videoType,
         ssrc,
-        muted) {
+        muted,
+        sourceName) {
     let remoteTracksMap = this.remoteTracks.get(ownerEndpointId);
 
     if (!remoteTracksMap) {
         remoteTracksMap = new Map();
+        remoteTracksMap.set(MediaType.AUDIO, new Set());
+        remoteTracksMap.set(MediaType.VIDEO, new Set());
         this.remoteTracks.set(ownerEndpointId, remoteTracksMap);
     }
 
-    const existingTrack = remoteTracksMap.get(mediaType);
+    const userTracksByMediaType = remoteTracksMap.get(mediaType);
 
-    // Delete the existing track and create the new one because of a known bug on Safari.
-    // RTCPeerConnection.ontrack fires when a new remote track is added but MediaStream.onremovetrack doesn't so
-    // it needs to be removed whenever a new track is received for the same endpoint id.
-    if (existingTrack && browser.isSafari()) {
-        this._remoteTrackRemoved(existingTrack.getOriginalStream(), existingTrack.getTrack());
-    }
-
-    if (existingTrack && existingTrack.getTrack() === track) {
-        // Ignore duplicated event which can originate either from
-        // 'onStreamAdded' or 'onTrackAdded'.
-        logger.info(
-            `${this} ignored duplicated remote track added event for: `
-                + `${ownerEndpointId}, ${mediaType}`);
+    if (userTracksByMediaType?.size
+        && Array.from(userTracksByMediaType).find(jitsiTrack => jitsiTrack.getTrack() === track)) {
+        // Ignore duplicated event which can originate either from 'onStreamAdded' or 'onTrackAdded'.
+        logger.info(`${this} ignored duplicated track event for track[endpoint=${ownerEndpointId},type=${mediaType}]`);
 
         return;
-    } else if (existingTrack) {
-        logger.error(`${this} overwriting remote track for ${ownerEndpointId} ${mediaType}`);
+    } else if (userTracksByMediaType?.size && !FeatureFlags.isSourceNameSignalingEnabled()) {
+        logger.error(`${this} received a second remote track for track[endpoint=${ownerEndpointId},type=${mediaType}]`
+            + 'deleting the existing track');
+        const existingTrack = Array.from(userTracksByMediaType)[0];
+
+        // The exisiting track needs to be removed here. This happens on Safari sometimes when a SSRC is removed from
+        // the remote description and the browser doesn't fire a 'removetrack' event on the associated MediaStream.
+        this._remoteTrackRemoved(existingTrack.getOriginalStream(), existingTrack.getTrack());
     }
 
     const remoteTrack
@@ -965,10 +977,10 @@ TraceablePeerConnection.prototype._createRemoteTrack = function(
                 videoType,
                 ssrc,
                 muted,
-                this.isP2P);
+                this.isP2P,
+                sourceName);
 
-    remoteTracksMap.set(mediaType, remoteTrack);
-
+    userTracksByMediaType.add(remoteTrack);
     this.eventEmitter.emit(RTCEvents.REMOTE_TRACK_ADDED, remoteTrack, this);
 };
 
