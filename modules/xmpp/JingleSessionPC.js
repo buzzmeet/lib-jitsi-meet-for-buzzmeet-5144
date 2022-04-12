@@ -1626,6 +1626,46 @@ export default class JingleSessionPC extends JingleSession {
     }
 
     /**
+     * Handles the deletion of SSRCs associated with a remote user from the remote description when the user leaves.
+     *
+     * @param {string} id Endpoint id of the participant that has left the call.
+     * @returns {void}
+     */
+     removeRemoteStreamsOnLeave(id) {
+        const workFunction = finishCallback => {
+            const removeSsrcInfo = this.peerconnection.getRemoteSourceInfoByParticipant(id);
+
+            if (removeSsrcInfo.length) {
+                const oldLocalSdp = new SDP(this.peerconnection.localDescription.sdp);
+                const newRemoteSdp = this._processRemoteRemoveSource(removeSsrcInfo);
+
+                this._renegotiate(newRemoteSdp.raw)
+                    .then(() => {
+                        const newLocalSDP = new SDP(this.peerconnection.localDescription.sdp);
+
+                        this.notifyMySSRCUpdate(oldLocalSdp, newLocalSDP);
+                        finishCallback();
+                    })
+                    .catch(err => finishCallback(err));
+            } else {
+                finishCallback();
+            }
+        };
+
+        logger.debug(`${this} Queued removeRemoteStreamsOnLeave task for participant ${id}`);
+
+        this.modificationQueue.push(
+            workFunction,
+            error => {
+                if (error) {
+                    logger.error(`${this} removeRemoteStreamsOnLeave error:`, error);
+                } else {
+                    logger.info(`${this} removeRemoteStreamsOnLeave done!`);
+                }
+            });
+    }
+
+    /**
      * Handles either Jingle 'source-add' or 'source-remove' message for this
      * Jingle session.
      * @param {boolean} isAdd <tt>true</tt> for 'source-add' or <tt>false</tt>

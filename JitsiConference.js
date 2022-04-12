@@ -1317,7 +1317,7 @@ JitsiConference.prototype._setupNewTrack = function(newTrack) {
     }
 
     this.rtc.addLocalTrack(newTrack);
-    newTrack.setConference(this);
+    newTrack._setConference(this);
 
     // Add event handlers.
     newTrack.muteHandler = this._fireMuteChangeEvent.bind(this, newTrack);
