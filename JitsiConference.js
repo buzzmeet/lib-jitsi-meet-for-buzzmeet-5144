@@ -1192,7 +1192,7 @@ JitsiConference.prototype._fireMuteChangeEvent = function(track) {
  * @param track the JitsiLocalTrack object.
  */
 JitsiConference.prototype.onLocalTrackRemoved = function(track) {
-    track._setConference(null);
+    track.setConference(null);
     this.rtc.removeLocalTrack(track);
     track.removeEventListener(JitsiTrackEvents.TRACK_MUTE_CHANGED, track.muteHandler);
     if (track.isAudioTrack()) {
@@ -1346,7 +1346,7 @@ JitsiConference.prototype._setupNewTrack = function(newTrack) {
     }
 
     this.rtc.addLocalTrack(newTrack);
-    newTrack._setConference(this);
+    newTrack.setConference(this);
 
     // Add event handlers.
     newTrack.muteHandler = this._fireMuteChangeEvent.bind(this, newTrack);
