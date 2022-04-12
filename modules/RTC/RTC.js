@@ -16,6 +16,7 @@ import BridgeChannel from './BridgeChannel';
 import JitsiLocalTrack from './JitsiLocalTrack';
 import RTCUtils from './RTCUtils';
 import TraceablePeerConnection from './TraceablePeerConnection';
+import FeatureFlags from '../flags/FeatureFlags';
 
 
 const logger = getLogger(__filename);
