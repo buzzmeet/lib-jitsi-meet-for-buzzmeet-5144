@@ -560,7 +560,7 @@ export default class RTC extends Listenable {
      * @param {boolean} options.startSilent If set to 'true' no audio will be sent or received.
      * @return {TraceablePeerConnection}
      */
-    createPeerConnection(signaling, iceConfig, isP2P, options) {
+    createPeerConnection(signaling, pcConfig, isP2P, options) {
         const pcConstraints = JSON.parse(JSON.stringify(RTCUtils.pcConstraints));
 
         if (typeof options.abtestSuspendVideo !== 'undefined') {
@@ -576,7 +576,7 @@ export default class RTC extends Listenable {
         }
 
         // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
-        iceConfig.sdpSemantics = 'unified-plan';
+        pcConfig.sdpSemantics = 'unified-plan';
 
         if (browser.supportsSdpSemantics()) {
             logger.debug('WebRTC application is running in plan-b mode');
