@@ -2,6 +2,8 @@
  * The errors for the JitsiTrack objects.
  */
 
+import { consoleTransport } from "jitsi-meet-logger/lib/Logger";
+
 /**
  * An error which indicates that some of requested constraints in
  * getUserMedia call were not satisfied.
@@ -67,3 +69,8 @@ export const TRACK_NO_STREAM_FOUND = 'track.no_stream_found';
  * by a webcam.
  */
 export const UNSUPPORTED_RESOLUTION = 'gum.unsupported_resolution';
+
+/**
+     * Indicates that the timeout passed to the obtainAudioAndVideoPermissions has expired without GUM resolving.
+     */
+export const TIMEOUT = 'gum.timeout';

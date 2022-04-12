@@ -11,6 +11,7 @@ import { getLogger } from 'jitsi-meet-logger';
 import clonedeep from 'lodash.clonedeep';
 
 import JitsiTrackError from '../../JitsiTrackError';
+import * as JitsiTrackErrors from '../../JitsiTrackErrors';
 import CameraFacingMode from '../../service/RTC/CameraFacingMode';
 import * as MediaType from '../../service/RTC/MediaType';
 import RTCEvents from '../../service/RTC/RTCEvents';
