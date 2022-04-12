@@ -3171,3 +3171,47 @@ TraceablePeerConnection.prototype._isSharingScreen = function() {
  TraceablePeerConnection.prototype.isSharingLowFpsScreen = function() {
     return this._isSharingScreen() && this._capScreenshareBitrate;
 };
+
+/**
+ * Parses the remote description and returns the sdp lines of the sources associated with a remote participant.
+ *
+ * @param {string} id Endpoint id of the remote participant.
+ * @returns {Array<string>} The sdp lines that have the ssrc information.
+ */
+ TraceablePeerConnection.prototype.getRemoteSourceInfoByParticipant = function(id) {
+    const removeSsrcInfo = [];
+    const remoteTracks = this.getRemoteTracks(id);
+
+    if (!remoteTracks?.length) {
+        return removeSsrcInfo;
+    }
+    const primarySsrcs = remoteTracks.map(track => track.getSSRC());
+    const sdp = new SDP(this.remoteDescription.sdp);
+
+    primarySsrcs.forEach((ssrc, idx) => {
+        for (const media of sdp.media) {
+            let lines = '';
+            let ssrcLines = SDPUtil.findLines(media, `a=ssrc:${ssrc}`);
+
+            if (ssrcLines.length) {
+                if (!removeSsrcInfo[idx]) {
+                    removeSsrcInfo[idx] = '';
+                }
+
+                // Check if there are any FID groups present for the primary ssrc.
+                const fidLines = SDPUtil.findLines(media, `a=ssrc-group:FID ${ssrc}`);
+
+                if (fidLines.length) {
+                    const secondarySsrc = fidLines[0].split(' ')[2];
+
+                    lines += `${fidLines[0]}\r\n`;
+                    ssrcLines = ssrcLines.concat(SDPUtil.findLines(media, `a=ssrc:${secondarySsrc}`));
+                }
+                removeSsrcInfo[idx] += `${ssrcLines.join('\r\n')}\r\n`;
+                removeSsrcInfo[idx] += lines;
+            }
+        }
+    });
+
+    return removeSsrcInfo;
+};
