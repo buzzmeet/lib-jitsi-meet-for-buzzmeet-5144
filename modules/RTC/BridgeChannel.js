@@ -178,6 +178,18 @@ export default class BridgeChannel {
     }
 
     /**
+     * Sends local stats via the bridge channel.
+     * @param {Object} payload The payload of the message.
+     * @throws NetworkError/InvalidStateError/Error if the operation fails or if there is no data channel created.
+     */
+    sendEndpointStatsMessage(payload) {
+        this._send({
+            colibriClass: 'EndpointStats',
+            ...payload
+        });
+    }
+
+    /**
      * Sends message via the channel.
      * @param {string} to The id of the endpoint that should receive the
      * message. If "" the message will be sent to all participants.

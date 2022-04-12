@@ -73,6 +73,16 @@ export default class BrowserCapabilities extends BrowserDetection {
             || (this.isSafari() && !this.isVersionLessThan('12.1'));
     }
 
+    isWebKitBased() {
+        // https://trac.webkit.org/changeset/236144/webkit/trunk/LayoutTests/webrtc/video-addLegacyTransceiver.html
+        return this._bowser.isEngine('webkit')
+            && typeof navigator.mediaDevices !== 'undefined'
+            && typeof navigator.mediaDevices.getUserMedia !== 'undefined'
+            && typeof window.RTCRtpTransceiver !== 'undefined'
+            // eslint-disable-next-line no-undef
+            && Object.keys(RTCRtpTransceiver.prototype).indexOf('currentDirection') > -1;
+    }
+
     /**
      * Returns whether or not the current environment needs a user interaction
      * with the page before any unmute can occur.

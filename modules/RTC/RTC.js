@@ -267,9 +267,7 @@ export default class RTC extends Listenable {
      */
     static obtainAudioAndVideoPermissions(options) {
         const usesNewGumFlow = browser.usesNewGumFlow();
-        const obtainMediaPromise = usesNewGumFlow
-            ? RTCUtils.newObtainAudioAndVideoPermissions(options)
-            : RTCUtils.obtainAudioAndVideoPermissions(options);
+        const obtainMediaPromise = RTCUtils.obtainAudioAndVideoPermissions(options);
 
         return obtainMediaPromise.then(tracksInfo => {
             if (usesNewGumFlow) {

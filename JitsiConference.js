@@ -1194,10 +1194,10 @@ JitsiConference.prototype._fireMuteChangeEvent = function(track) {
 JitsiConference.prototype.onLocalTrackRemoved = function(track) {
     track._setConference(null);
     this.rtc.removeLocalTrack(track);
-    track.removeEventListener(JitsiTrackEvents.TRACK_MUTE_CHANGED,
-        track.muteHandler);
-    track.removeEventListener(JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED,
-        track.audioLevelHandler);
+    track.removeEventListener(JitsiTrackEvents.TRACK_MUTE_CHANGED, track.muteHandler);
+    if (track.isAudioTrack()) {
+        track.removeEventListener(JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED, track.audioLevelHandler);
+    }
 
     // send event for stopping screen sharing
     // FIXME: we assume we have only one screen sharing track

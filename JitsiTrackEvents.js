@@ -43,3 +43,5 @@ export const NO_DATA_FROM_SOURCE = 'track.no_data_from_source';
  * the microphone that is currently selected.
  */
 export const NO_AUDIO_INPUT = 'track.no_audio_input';
+
+export const TRACK_STREAMING_STATUS_CHANGED = 'track.streaming_status_changed';

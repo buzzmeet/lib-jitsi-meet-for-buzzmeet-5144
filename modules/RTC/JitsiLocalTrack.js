@@ -545,7 +545,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
 
             if (browser.usesNewGumFlow()) {
                 promise
-                    = RTCUtils.newObtainAudioAndVideoPermissions(Object.assign(
+                    = RTCUtils.obtainAudioAndVideoPermissions(Object.assign(
                         {},
                         streamOptions,
                         { constraints: { video: this._constraints } }));
