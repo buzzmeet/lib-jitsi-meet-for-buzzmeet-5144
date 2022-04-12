@@ -174,6 +174,10 @@ export default class JitsiTrack extends EventEmitter {
         }
     }
 
+    getVideoType() {
+        return this.videoType;
+    }
+
     /**
      * Returns the type (audio or video) of this track.
      */
