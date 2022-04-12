@@ -60,6 +60,7 @@ import {
     createP2PEvent
 } from './service/statistics/AnalyticsEvents';
 import * as XMPPEvents from './service/xmpp/XMPPEvents';
+import FeatureFlags from './modules/flags/FeatureFlags';
 
 const logger = getLogger(__filename);
 
@@ -952,26 +953,181 @@ JitsiConference.prototype.getTranscriptionStatus = function() {
  * @returns {Promise<JitsiLocalTrack>}
  * @throws {Error} if the specified track is a video track and there is already
  * another video track in the conference.
+ * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
  */
 JitsiConference.prototype.addTrack = function(track) {
-    if (track.isVideoTrack()) {
-        // Ensure there's exactly 1 local video track in the conference.
-        const localVideoTrack = this.rtc.getLocalVideoTrack();
+    const mediaType = track.getType();
+    const localTracks = this.rtc.getLocalTracks(mediaType);
 
-        if (localVideoTrack) {
-            // Don't be excessively harsh and severe if the API client happens
-            // to attempt to add the same local video track twice.
-            if (track === localVideoTrack) {
-                return Promise.resolve(track);
-            }
+    // Ensure there's exactly 1 local track of each media type in the conference.
+    if (localTracks.length > 0) {
+        // Don't be excessively harsh and severe if the API client happens to attempt to add the same local track twice.
+        if (track === localTracks[0]) {
+            return Promise.resolve(track);
+        }
 
-            return Promise.reject(new Error(
-                'cannot add second video track to the conference'));
+        if (FeatureFlags.isMultiStreamSupportEnabled() && mediaType === MediaType.VIDEO) {
+            const addTrackPromises = [];
 
+            this.p2pJingleSession && addTrackPromises.push(this.p2pJingleSession.addTracks([ track ]));
+            this.jvbJingleSession && addTrackPromises.push(this.jvbJingleSession.addTracks([ track ]));
+
+            return Promise.all(addTrackPromises)
+                .then(() => {
+                    this._setupNewTrack(track);
+                    this._sendBridgeVideoTypeMessage(track);
+                    this._updateRoomPresence(this._getActiveMediaSession());
+
+                    if (this.isMutedByFocus || this.isVideoMutedByFocus) {
+                        this._fireMuteChangeEvent(track);
+                    }
+                });
+        }
+
+        return Promise.reject(new Error(`Cannot add second ${mediaType} track to the conference`));
+    }
+};
+
+/**
+ * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
+ * @param {*} jingleSession 
+ * @param {*} ctx 
+ * @returns 
+ */
+JitsiConference.prototype._updateRoomPresence = function(jingleSession, ctx) {
+    if (!jingleSession) {
+        return;
+    }
+
+    // skips sending presence twice for the same pass of updating ssrcs
+    if (ctx) {
+        if (ctx.skip) {
+            return;
+        }
+        ctx.skip = true;
+    }
+
+    let presenceChanged = false;
+    let muteStatusChanged, videoTypeChanged;
+    const localTracks = this.getLocalTracks();
+    const localAudioTracks = jingleSession.peerconnection.getLocalTracks(MediaType.AUDIO);
+    const localVideoTracks = jingleSession.peerconnection.getLocalTracks(MediaType.VIDEO);
+
+    // Set presence for all the available local tracks.
+    for (const track of localTracks) {
+        muteStatusChanged = this._setTrackMuteStatus(track.getType(), track, track.isMuted());
+        if (track.getType() === MediaType.VIDEO) {
+            videoTypeChanged = this._setNewVideoType(track);
+        }
+        presenceChanged = muteStatusChanged || videoTypeChanged;
+    }
+
+    // Set the presence in the legacy format if there are no local tracks and multi stream support is not enabled.
+    if (!FeatureFlags.isMultiStreamSupportEnabled()) {
+        let audioMuteStatusChanged, videoMuteStatusChanged;
+
+        if (!localAudioTracks?.length) {
+            audioMuteStatusChanged = this._setTrackMuteStatus(MediaType.AUDIO, undefined, true);
+        }
+        if (!localVideoTracks?.length) {
+            videoMuteStatusChanged = this._setTrackMuteStatus(MediaType.VIDEO, undefined, true);
+            videoTypeChanged = this._setNewVideoType();
+        }
+
+        presenceChanged = presenceChanged || audioMuteStatusChanged || videoMuteStatusChanged || videoTypeChanged;
+    }
+
+    presenceChanged && this.room.sendPresence();
+};
+
+/**
+ * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
+ * Sets the video type.
+ * @param track
+ * @return <tt>true</tt> if video type was changed in presence.
+ * @private
+ */
+ JitsiConference.prototype._setNewVideoType = function(track) {
+    let videoTypeChanged = false;
+
+    if (FeatureFlags.isSourceNameSignalingEnabled() && track) {
+        videoTypeChanged = this._signalingLayer.setTrackVideoType(track.getSourceName(), track.videoType);
+    }
+
+    if (!FeatureFlags.isMultiStreamSupportEnabled()) {
+        const videoTypeTagName = 'videoType';
+
+        // If track is missing we revert to default type Camera, the case where we screenshare and
+        // we return to be video muted.
+        const trackVideoType = track ? track.videoType : VideoType.CAMERA;
+
+        // If video type is camera and there is no videoType in presence, we skip adding it, as this is the default one
+        if (trackVideoType !== VideoType.CAMERA || this.room.getFromPresence(videoTypeTagName)) {
+            // We will not use this.sendCommand here to avoid sending the presence immediately, as later we may also
+            // set the mute status.
+            const legacyTypeChanged = this.room.addOrReplaceInPresence(videoTypeTagName, { value: trackVideoType });
+
+            videoTypeChanged = videoTypeChanged || legacyTypeChanged;
         }
     }
 
-    return this.replaceTrack(null, track);
+    return videoTypeChanged;
+};
+
+/**
+ * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
+ * Sets mute status.
+ * @param mediaType
+ * @param localTrack
+ * @param isMuted
+ * @param <tt>true</tt> when presence was changed, <tt>false</tt> otherwise.
+ * @private
+ */
+ JitsiConference.prototype._setTrackMuteStatus = function(mediaType, localTrack, isMuted) {
+    let presenceChanged = false;
+
+    if (FeatureFlags.isSourceNameSignalingEnabled() && localTrack) {
+        presenceChanged = this._signalingLayer.setTrackMuteStatus(localTrack.getSourceName(), isMuted);
+    }
+
+    // Add the 'audioMuted' and 'videoMuted' tags when source name signaling is enabled for backward compatibility.
+    // It won't be used anymore when multiple stream support is enabled.
+    if (!FeatureFlags.isMultiStreamSupportEnabled()) {
+        let audioMuteChanged, videoMuteChanged;
+
+        if (!this.room) {
+            return false;
+        }
+
+        if (mediaType === MediaType.AUDIO) {
+            audioMuteChanged = this.room.addAudioInfoToPresence(isMuted);
+        } else {
+            videoMuteChanged = this.room.addVideoInfoToPresence(isMuted);
+        }
+
+        presenceChanged = presenceChanged || audioMuteChanged || videoMuteChanged;
+    }
+
+    return presenceChanged;
+};
+
+
+/**
+ * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
+ * @param {*} localtrack 
+ */
+JitsiConference.prototype._sendBridgeVideoTypeMessage = function(localtrack) {
+    let videoType = !localtrack || localtrack.isMuted() ? BridgeVideoType.NONE : localtrack.getVideoType();
+
+    if (videoType === BridgeVideoType.DESKTOP && this._desktopSharingFrameRate > SS_DEFAULT_FRAME_RATE) {
+        videoType = BridgeVideoType.DESKTOP_HIGH_FPS;
+    }
+
+    if (FeatureFlags.isSourceNameSignalingEnabled() && localtrack) {
+        this.rtc.sendSourceVideoType(localtrack.getSourceName(), videoType);
+    } else if (!FeatureFlags.isSourceNameSignalingEnabled()) {
+        this.rtc.setVideoType(videoType);
+    }
 };
 
 /**
@@ -1129,49 +1285,40 @@ JitsiConference.prototype._doReplaceTrack = function(oldTrack, newTrack) {
  * @param {JitsiLocalTrack} newTrack the new track being created
  */
 JitsiConference.prototype._setupNewTrack = function(newTrack) {
-    if (newTrack.isAudioTrack() || (newTrack.isVideoTrack()
-            && newTrack.videoType !== VideoType.DESKTOP)) {
+    const mediaType = newTrack.getType();
+
+    if (newTrack.isAudioTrack() || (newTrack.isVideoTrack() && newTrack.videoType !== VideoType.DESKTOP)) {
         // Report active device to statistics
         const devices = RTC.getCurrentlyAvailableMediaDevices();
-        const device
-            = devices.find(
-                d =>
-                    d.kind === `${newTrack.getTrack().kind}input`
-                        && d.label === newTrack.getTrack().label);
+        const device = devices
+            .find(d => d.kind === `${newTrack.getTrack().kind}input` && d.label === newTrack.getTrack().label);
 
         if (device) {
-            Statistics.sendActiveDeviceListEvent(
-                RTC.getEventDataForActiveDevice(device));
+            Statistics.sendActiveDeviceListEvent(RTC.getEventDataForActiveDevice(device));
         }
     }
-    if (newTrack.isVideoTrack()) {
-        this.removeCommand('videoType');
-        this.sendCommand('videoType', {
-            value: newTrack.videoType,
-            attributes: {
-                xmlns: 'http://jitsi.org/jitmeet/video'
-            }
-        });
+
+    // Create a source name for this track if it doesn't exist.
+    if (FeatureFlags.isSourceNameSignalingEnabled() && !newTrack.getSourceName()) {
+        const sourceName = getSourceNameForJitsiTrack(
+            this.myUserId(),
+            mediaType,
+            this.getLocalTracks(mediaType)?.length);
+
+        newTrack.setSourceName(sourceName);
     }
+
     this.rtc.addLocalTrack(newTrack);
+    newTrack.setConference(this);
 
-    // ensure that we're sharing proper "is muted" state
-    if (newTrack.isAudioTrack()) {
-        this.room.setAudioMute(newTrack.isMuted());
-    } else {
-        this.room.setVideoMute(newTrack.isMuted());
-    }
-
+    // Add event handlers.
     newTrack.muteHandler = this._fireMuteChangeEvent.bind(this, newTrack);
-    newTrack.audioLevelHandler = this._fireAudioLevelChangeEvent.bind(this);
-    newTrack.addEventListener(
-        JitsiTrackEvents.TRACK_MUTE_CHANGED,
-        newTrack.muteHandler);
-    newTrack.addEventListener(
-        JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED,
-        newTrack.audioLevelHandler);
+    newTrack.addEventListener(JitsiTrackEvents.TRACK_MUTE_CHANGED, newTrack.muteHandler);
 
-    newTrack._setConference(this);
+    if (newTrack.isAudioTrack()) {
+        newTrack.audioLevelHandler = this._fireAudioLevelChangeEvent.bind(this);
+        newTrack.addEventListener(JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED, newTrack.audioLevelHandler);
+    }
 
     this.eventEmitter.emit(JitsiConferenceEvents.TRACK_ADDED, newTrack);
 };
@@ -1611,23 +1758,47 @@ JitsiConference.prototype.onMemberLeft = function(jid) {
     }
 
     const participant = this.participants[id];
+    const mediaSessions = this.getMediaSessions();
+    let tracksToBeRemoved = [];
 
-    delete this.participants[id];
+    for (const session of mediaSessions) {
+        const remoteTracks = session.peerconnection.getRemoteTracks(id);
 
-    const removedTracks = this.rtc.removeRemoteTracks(id);
+        remoteTracks && (tracksToBeRemoved = [ ...tracksToBeRemoved, ...remoteTracks ]);
 
-    removedTracks.forEach(
-        track =>
-            this.eventEmitter.emit(JitsiConferenceEvents.TRACK_REMOVED, track));
-
-    // there can be no participant in case the member that left is focus
-    if (participant) {
-        this.eventEmitter.emit(
-            JitsiConferenceEvents.USER_LEFT, id, participant);
+        // Remove the ssrcs from the remote description and renegotiate.
+        session.removeRemoteStreamsOnLeave(id);
     }
 
-    this._maybeStartOrStopP2P(true /* triggered by user left event */);
-    this._maybeClearSITimeout();
+    // Fire the event before renegotiation is done so that the thumbnails can be removed immediately.
+    tracksToBeRemoved.forEach(track => {
+        this.eventEmitter.emit(JitsiConferenceEvents.TRACK_REMOVED, track);
+    });
+
+    if (participant) {
+        delete this.participants[id];
+        this.eventEmitter.emit(JitsiConferenceEvents.USER_LEFT, id, participant);
+    }
+
+    if (this.room !== null) { // Skip if we have left the room already.
+        this._maybeStartOrStopP2P(true /* triggered by user left event */);
+        this._maybeClearSITimeout();
+    }
+};
+
+/**
+ * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
+ * Returns an array containing all media sessions existing in this conference.
+ *
+ * @returns {Array<JingleSessionPC>}
+ */
+ JitsiConference.prototype.getMediaSessions = function() {
+    const sessions = [];
+
+    this.jvbJingleSession && sessions.push(this.jvbJingleSession);
+    this.p2pJingleSession && sessions.push(this.p2pJingleSession);
+
+    return sessions;
 };
 
 /**
