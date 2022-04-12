@@ -76,6 +76,8 @@ export default class JitsiRemoteTrack extends JitsiTrack {
         this.muted = muted;
         this.isP2P = isP2P;
         this._sourceName = sourceName;
+        this._trackStreamingStatus = null;
+        this._trackStreamingStatusImpl = null;
 
         logger.debug(`New remote track added: ${this}`);
 
@@ -323,5 +325,56 @@ export default class JitsiRemoteTrack extends JitsiTrack {
     toString() {
         return `RemoteTrack[userID: ${this.getParticipantId()}, type: ${this.getType()}, ssrc: ${
             this.getSSRC()}, p2p: ${this.isP2P}, status: ${this._getStatus()}]`;
+    }
+
+    dispose() {
+        if (FeatureFlags.isSourceNameSignalingEnabled()) {
+            this._disposeTrackStreamingStatus();
+        }
+
+        return super.dispose();
+    }
+
+    /**
+     * Initializes trackStreamingStatusImpl.
+     */
+     _initTrackStreamingStatus() {
+        const config = this.conference.options.config;
+
+        this._trackStreamingStatus = TrackStreamingStatus.ACTIVE;
+
+        this._trackStreamingStatusImpl = new TrackStreamingStatusImpl(
+            this.rtc,
+            this.conference,
+            this,
+            {
+                // These options are not public API, leaving it here only as an entry point through config for
+                // tuning up purposes. Default values should be adjusted as soon as optimal values are discovered.
+                p2pRtcMuteTimeout: config._p2pConnStatusRtcMuteTimeout,
+                rtcMuteTimeout: config._peerConnStatusRtcMuteTimeout,
+                outOfForwardedSourcesTimeout: config._peerConnStatusOutOfLastNTimeout
+            });
+
+        this._trackStreamingStatusImpl.init();
+    }
+
+    /**
+     * Disposes trackStreamingStatusImpl and clears trackStreamingStatus.
+     */
+    _disposeTrackStreamingStatus() {
+        if (this._trackStreamingStatusImpl) {
+            this._trackStreamingStatusImpl.dispose();
+            this._trackStreamingStatusImpl = null;
+            this._trackStreamingStatus = null;
+        }
+    }
+
+    /**
+     * Updates track's streaming status.
+     *
+     * @param {string} state the current track streaming state. {@link TrackStreamingStatus}.
+     */
+    _setTrackStreamingStatus(status) {
+        this._trackStreamingStatus = status;
     }
 }

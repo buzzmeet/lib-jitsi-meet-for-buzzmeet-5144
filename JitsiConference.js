@@ -994,6 +994,8 @@ JitsiConference.prototype.addTrack = function(track) {
 
         return Promise.reject(new Error(`Cannot add second ${mediaType} track to the conference`));
     }
+
+    return this.replaceTrack(null, track);
 };
 
 /**
@@ -1226,34 +1228,60 @@ JitsiConference.prototype.removeTrack = function(track) {
  * @returns {Promise} resolves when the replacement is finished
  */
 JitsiConference.prototype.replaceTrack = function(oldTrack, newTrack) {
-    // First do the removal of the oldTrack at the JitsiConference level
-    if (oldTrack) {
-        if (oldTrack.disposed) {
-            return Promise.reject(
-                new JitsiTrackError(JitsiTrackErrors.TRACK_IS_DISPOSED));
-        }
+    const oldVideoType = oldTrack?.getVideoType();
+    const newVideoType = newTrack?.getVideoType();
+
+    if (FeatureFlags.isMultiStreamSupportEnabled() && oldTrack && newTrack && oldVideoType !== newVideoType) {
+        throw new Error(`Replacing a track of videoType=${oldVideoType} with a track of videoType=${newVideoType} is`
+            + ' not supported in this mode.');
     }
-    if (newTrack) {
-        if (newTrack.disposed) {
-            return Promise.reject(
-                new JitsiTrackError(JitsiTrackErrors.TRACK_IS_DISPOSED));
-        }
+    const oldTrackBelongsToConference = this === oldTrack?.conference;
+
+    if (oldTrackBelongsToConference && oldTrack.disposed) {
+        return Promise.reject(new JitsiTrackError(JitsiTrackErrors.TRACK_IS_DISPOSED));
+    }
+    if (newTrack?.disposed) {
+        return Promise.reject(new JitsiTrackError(JitsiTrackErrors.TRACK_IS_DISPOSED));
+    }
+
+    if (oldTrack && !oldTrackBelongsToConference) {
+        logger.warn(`JitsiConference.replaceTrack oldTrack (${oldTrack} does not belong to this conference`);
+    }
+
+    if (FeatureFlags.isMultiStreamSupportEnabled() && oldTrack && newTrack && oldTrack.isVideoTrack()) {
+        newTrack.setSourceName(oldTrack.getSourceName());
     }
 
     // Now replace the stream at the lower levels
-    return this._doReplaceTrack(oldTrack, newTrack)
+    return this._doReplaceTrack(oldTrackBelongsToConference ? oldTrack : null, newTrack)
         .then(() => {
-            if (oldTrack) {
-                this.onLocalTrackRemoved(oldTrack);
+            oldTrackBelongsToConference && this.onLocalTrackRemoved(oldTrack);
+            newTrack && this._setupNewTrack(newTrack);
+
+            // Send 'VideoTypeMessage' on the bridge channel when a video track is added/removed.
+            if ((oldTrackBelongsToConference && oldTrack?.isVideoTrack()) || newTrack?.isVideoTrack()) {
+                this._sendBridgeVideoTypeMessage(newTrack);
             }
-            if (newTrack) {
-                // Now handle the addition of the newTrack at the
-                // JitsiConference level
-                this._setupNewTrack(newTrack);
+
+            // updates presence when we replace the video tracks desktop with screen and screen with desktop
+            if (oldTrackBelongsToConference && oldTrack?.isVideoTrack()
+
+                // we do not want to send presence update during setEffect switching, which does remove and then add
+                && !(oldTrack?._setEffectInProgress || newTrack?._setEffectInProgress)) {
+                this._updateRoomPresence(this._getActiveMediaSession());
+            }
+
+            if (newTrack !== null && (this.isMutedByFocus || this.isVideoMutedByFocus)) {
+                this._fireMuteChangeEvent(newTrack);
             }
 
             return Promise.resolve();
-        }, error => Promise.reject(new Error(error)));
+        })
+        .catch(error => {
+            logger.error(`replaceTrack failed: ${error?.stack}`);
+
+            return Promise.reject(error);
+        });
 };
 
 /**
