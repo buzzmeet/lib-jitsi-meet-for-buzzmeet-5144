@@ -40,6 +40,11 @@ const IQ_TIMEOUT = 10000;
  */
 const DEFAULT_MAX_STATS = 300;
 
+function getEndpointId(jidOrEndpointId) {
+    return Strophe.getResourceFromJid(jidOrEndpointId) || jidOrEndpointId;
+}
+
+
 /**
  * @typedef {Object} JingleSessionPCOptions
  * @property {Object} abTesting - A/B testing related options (ask George).
