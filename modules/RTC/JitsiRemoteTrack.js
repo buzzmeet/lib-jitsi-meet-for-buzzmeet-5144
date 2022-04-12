@@ -1,6 +1,7 @@
 import * as JitsiTrackEvents from '../../JitsiTrackEvents';
 import { createTtfmEvent } from '../../service/statistics/AnalyticsEvents';
 import Statistics from '../statistics/statistics';
+import FeatureFlags from '../flags/FeatureFlags';
 
 import JitsiTrack from './JitsiTrack';
 
