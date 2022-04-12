@@ -62,6 +62,7 @@ import {
 import * as XMPPEvents from './service/xmpp/XMPPEvents';
 import FeatureFlags from './modules/flags/FeatureFlags';
 import SignalingLayerImpl from './modules/xmpp/SignalingLayerImpl';
+import { SS_DEFAULT_FRAME_RATE } from './modules/RTC/ScreenObtainer'
 
 const logger = getLogger(__filename);
 
@@ -1127,10 +1128,10 @@ JitsiConference.prototype._updateRoomPresence = function(jingleSession, ctx) {
  * @param {*} localtrack 
  */
 JitsiConference.prototype._sendBridgeVideoTypeMessage = function(localtrack) {
-    let videoType = !localtrack || localtrack.isMuted() ? BridgeVideoType.NONE : localtrack.getVideoType();
+    let videoType = !localtrack || localtrack.isMuted() ? 'none' : localtrack.getVideoType();
 
-    if (videoType === BridgeVideoType.DESKTOP && this._desktopSharingFrameRate > SS_DEFAULT_FRAME_RATE) {
-        videoType = BridgeVideoType.DESKTOP_HIGH_FPS;
+    if (videoType === 'desktop' && this._desktopSharingFrameRate > SS_DEFAULT_FRAME_RATE) {
+        videoType = 'desktop_high_fps';
     }
 
     if (FeatureFlags.isSourceNameSignalingEnabled() && localtrack) {

@@ -23,7 +23,7 @@ export default class BridgeChannel {
      * @param {EventEmitter} emitter the EventEmitter instance to use for event emission.
      * @param {function} senderVideoConstraintsChanged callback to call when the sender video constraints change.
      */
-    constructor(peerconnection, wsUrl, emitter, senderVideoConstraintsChanged) {
+    constructor(peerconnection, wsUrl, emitter) {
         if (!peerconnection && !wsUrl) {
             throw new TypeError(
                 'At least peerconnection or wsUrl must be given');
@@ -54,8 +54,6 @@ export default class BridgeChannel {
 
         // Indicates whether the connection was closed from the client or not.
         this._closedFromClient = false;
-
-        this._senderVideoConstraintsChanged = senderVideoConstraintsChanged;
 
         // If a RTCPeerConnection is given, listen for new RTCDataChannel
         // event.
@@ -372,13 +370,59 @@ export default class BridgeChannel {
 
                 break;
             }
+            case 'LastNEndpointsChangeEvent': {
+                if (!FeatureFlags.isSourceNameSignalingEnabled()) {
+                    // The new/latest list of last-n endpoint IDs (i.e. endpoints for which the bridge is sending
+                    // video).
+                    const lastNEndpoints = obj.lastNEndpoints;
+
+                    logger.info(`New forwarded endpoints: ${lastNEndpoints}`);
+                    emitter.emit(RTCEvents.LASTN_ENDPOINT_CHANGED, lastNEndpoints);
+                }
+
+                break;
+            }
+            case 'ForwardedSources': {
+                if (FeatureFlags.isSourceNameSignalingEnabled()) {
+                    // The new/latest list of forwarded sources
+                    const forwardedSources = obj.forwardedSources;
+
+                    logger.info(`New forwarded sources: ${forwardedSources}`);
+                    emitter.emit(RTCEvents.FORWARDED_SOURCES_CHANGED, forwardedSources);
+                }
+
+                break;
+            }
             case 'SenderVideoConstraints': {
                 const videoConstraints = obj.videoConstraints;
 
                 if (videoConstraints) {
                     logger.info(`SenderVideoConstraints: ${JSON.stringify(videoConstraints)}`);
-                    this._senderVideoConstraintsChanged(videoConstraints);
+                    emitter.emit(RTCEvents.SENDER_VIDEO_CONSTRAINTS_CHANGED, videoConstraints);
                 }
+                break;
+            }
+            case 'SenderSourceConstraints': {
+                if (FeatureFlags.isSourceNameSignalingEnabled()) {
+                    const { sourceName, maxHeight } = obj;
+
+                    if (typeof sourceName === 'string' && typeof maxHeight === 'number') {
+                        // eslint-disable-next-line object-property-newline
+                        logger.info(`SenderSourceConstraints: ${JSON.stringify({ sourceName, maxHeight })}`);
+                        emitter.emit(
+                            RTCEvents.SENDER_VIDEO_CONSTRAINTS_CHANGED, {
+                                sourceName,
+                                maxHeight
+                            }
+                        );
+                    } else {
+                        logger.error(`Invalid SenderSourceConstraints: ${JSON.stringify(obj)}`);
+                    }
+                }
+                break;
+            }
+            case 'ServerHello': {
+                logger.info(`Received ServerHello, version=${obj.version}.`);
                 break;
             }
             default: {

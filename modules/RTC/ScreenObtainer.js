@@ -7,6 +7,8 @@ const logger = require('jitsi-meet-logger').getLogger(__filename);
 
 let gumFunction = null;
 
+export const SS_DEFAULT_FRAME_RATE = 5;
+
 /**
  * Handles obtaining a stream from a screen capture on different browsers.
  */
