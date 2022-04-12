@@ -23,6 +23,7 @@ import SDP from './SDP';
 import SDPDiffer from './SDPDiffer';
 import SDPUtil from './SDPUtil';
 import XmppConnection from './XmppConnection';
+import FeatureFlags from '../flags/FeatureFlags';
 
 const logger = getLogger(__filename);
 
