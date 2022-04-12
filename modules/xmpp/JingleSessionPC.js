@@ -22,7 +22,6 @@ import MediaSessionEvents from './MediaSessionEvents';
 import SDP from './SDP';
 import SDPDiffer from './SDPDiffer';
 import SDPUtil from './SDPUtil';
-import SignalingLayerImpl from './SignalingLayerImpl';
 import XmppConnection from './XmppConnection';
 
 const logger = getLogger(__filename);
@@ -252,12 +251,6 @@ export default class JingleSessionPC extends JingleSession {
         this.remoteRecvMaxFrameHeight = undefined;
 
         /**
-         * The signaling layer implementation.
-         * @type {SignalingLayerImpl}
-         */
-        this.signalingLayer = new SignalingLayerImpl();
-
-        /**
          * The queue used to serialize operations done on the peerconnection.
          *
          * @type {AsyncQueue}
@@ -388,7 +381,7 @@ export default class JingleSessionPC extends JingleSession {
 
         this.peerconnection
             = this.rtc.createPeerConnection(
-                    this.signalingLayer,
+                    this._signalingLayer,
                     this.iceConfig,
                     this.isP2P,
                     pcOptions);
@@ -593,9 +586,6 @@ export default class JingleSessionPC extends JingleSession {
                     });
             }
         };
-
-        // The signaling layer will bind it's listeners at this point
-        this.signalingLayer.setChatRoom(this.room);
 
         if (!this.isP2P && options.enableLayerSuspension) {
             // If this is the bridge session, we'll listen for
@@ -853,33 +843,33 @@ export default class JingleSessionPC extends JingleSession {
      * @param contents
      */
     readSsrcInfo(contents) {
-        const ssrcs
-            = $(contents).find(
-                '>description>'
-                    + 'source[xmlns="urn:xmpp:jingle:apps:rtp:ssma:0"]');
+        const ssrcs = $(contents).find('>description>source[xmlns="urn:xmpp:jingle:apps:rtp:ssma:0"]');
 
         ssrcs.each((i, ssrcElement) => {
             const ssrc = Number(ssrcElement.getAttribute('ssrc'));
 
+            if (FeatureFlags.isSourceNameSignalingEnabled()) {
+                if (ssrcElement.hasAttribute('name')) {
+                    const sourceName = ssrcElement.getAttribute('name');
+
+                    this._signalingLayer.setTrackSourceName(ssrc, sourceName);
+                }
+            }
+
             if (this.isP2P) {
                 // In P2P all SSRCs are owner by the remote peer
-                this.signalingLayer.setSSRCOwner(
-                    ssrc, Strophe.getResourceFromJid(this.remoteJid));
+                this._signalingLayer.setSSRCOwner(ssrc, Strophe.getResourceFromJid(this.remoteJid));
             } else {
                 $(ssrcElement)
                     .find('>ssrc-info[xmlns="http://jitsi.org/jitmeet"]')
                     .each((i3, ssrcInfoElement) => {
                         const owner = ssrcInfoElement.getAttribute('owner');
 
-                        if (owner && owner.length) {
+                        if (owner?.length) {
                             if (isNaN(ssrc) || ssrc < 0) {
-                                logger.warn(
-                                    `Invalid SSRC ${ssrc} value received`
-                                        + ` for ${owner}`);
+                                logger.warn(`${this} Invalid SSRC ${ssrc} value received for ${owner}`);
                             } else {
-                                this.signalingLayer.setSSRCOwner(
-                                    ssrc,
-                                    Strophe.getResourceFromJid(owner));
+                                this._signalingLayer.setSSRCOwner(ssrc, getEndpointId(owner));
                             }
                         }
                     });
@@ -2527,9 +2517,6 @@ export default class JingleSessionPC extends JingleSession {
         this.modificationQueue.clear();
 
         this.modificationQueue.push(finishCallback => {
-            // The signaling layer will remove it's listeners
-            this.signalingLayer.setChatRoom(null);
-
             // do not try to close if already closed.
             this.peerconnection && this.peerconnection.close();
             finishCallback();

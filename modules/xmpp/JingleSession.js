@@ -69,6 +69,8 @@ export default class JingleSession extends Listenable {
          */
         this.room = null;
 
+        this._signalingLayer = null;
+
         /**
          * Jingle session state - uninitialized until {@link initialize} is
          * called @type {JingleSessionState}
@@ -108,7 +110,7 @@ export default class JingleSession extends Listenable {
      * @param {object} options - the options, see implementing class's
      * {@link #doInitialize} description for more details.
      */
-    initialize(room, rtc, options) {
+    initialize(room, rtc, signalingLayer, options) {
         if (this.state !== null) {
             const errmsg
                 = `attempt to initiate on session ${this.sid}
@@ -119,6 +121,7 @@ export default class JingleSession extends Listenable {
         }
         this.room = room;
         this.rtc = rtc;
+        this._signalingLayer = signalingLayer;
         this.state = JingleSessionState.PENDING;
         this.doInitialize(options);
     }

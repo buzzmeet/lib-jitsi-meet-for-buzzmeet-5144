@@ -261,6 +261,31 @@ export default class BridgeChannel {
         });
     }
 
+    sendNewReceiverVideoConstraintsMessage(constraints) {
+        logger.log(`Sending ReceiverVideoConstraints with ${JSON.stringify(constraints)}`);
+        this._send({
+            colibriClass: 'ReceiverVideoConstraints',
+            ...constraints
+        });
+    }
+
+    sendVideoTypeMessage(videoType) {
+        logger.debug(`Sending VideoTypeMessage with video type as ${videoType}`);
+        this._send({
+            colibriClass: 'VideoTypeMessage',
+            videoType
+        });
+    }
+
+    sendSourceVideoTypeMessage(sourceName, videoType) {
+        logger.info(`Sending SourceVideoTypeMessage with video type ${sourceName}: ${videoType}`);
+        this._send({
+            colibriClass: 'SourceVideoTypeMessage',
+            sourceName,
+            videoType
+        });
+    }
+
     /**
      * Set events on the given RTCDataChannel or WebSocket instance.
      */
