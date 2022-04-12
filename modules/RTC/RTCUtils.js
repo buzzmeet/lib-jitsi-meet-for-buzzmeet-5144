@@ -96,6 +96,7 @@ let disableAGC = false;
 
 // Disables Highpass Filter
 let disableHPF = false;
+let stereo = null;
 
 const featureDetectionAudioEl = document.createElement('audio');
 const isAudioOutputDeviceChangeAvailable
@@ -358,6 +359,10 @@ class RTCUtils extends Listenable {
         if (typeof options.disableHPF === 'boolean') {
             disableHPF = options.disableHPF;
             logger.info(`Disable HPF: ${disableHPF}`);
+        }
+        if (typeof options.audioQuality?.stereo === 'boolean') {
+            stereo = options.audioQuality.stereo;
+            logger.info(`Stereo: ${stereo}`);
         }
 
         availableDevices = [];
