@@ -61,6 +61,7 @@ import {
 } from './service/statistics/AnalyticsEvents';
 import * as XMPPEvents from './service/xmpp/XMPPEvents';
 import FeatureFlags from './modules/flags/FeatureFlags';
+import SignalingLayerImpl from './modules/xmpp/SignalingLayerImpl';
 
 const logger = getLogger(__filename);
 
@@ -126,6 +127,9 @@ export default function JitsiConference(options) {
     this.options = options;
     this.eventManager = new JitsiConferenceEventManager(this);
     this.participants = {};
+
+    this._signalingLayer = new SignalingLayerImpl();
+
     this._init(options);
     this.componentsVersions = new ComponentsVersions(this);
 
@@ -325,6 +329,8 @@ JitsiConference.prototype._init = function(options = {}) {
         },
         JitsiConference.resourceCreator
     );
+
+    this._signalingLayer.setChatRoom(this.room);
 
     // Connection interrupted/restored listeners
     this._onIceConnectionInterrupted
@@ -616,6 +622,8 @@ JitsiConference.prototype.leave = function() {
         this.eventManager.removeXMPPListeners();
 
         this.room = null;
+
+        this._signalingLayer.setChatRoom(null);
 
         return room.leave()
             .then(() => {
@@ -2100,7 +2108,7 @@ JitsiConference.prototype._acceptJvbIncomingCall = function(
         }));
 
     try {
-        jingleSession.initialize(this.room, this.rtc, {
+        jingleSession.initialize(this.room, this.rtc, this._signalingLayer, {
             ...this.options.config,
             enableInsertableStreams: this._isE2EEEnabled()
         });
@@ -2850,7 +2858,8 @@ JitsiConference.prototype._acceptP2PIncomingCall = function(
 
     this.p2pJingleSession.initialize(
         this.room,
-        this.rtc, {
+        this.rtc,
+        this._signalingLayer, {
             ...this.options.config,
             enableInsertableStreams: this._isE2EEEnabled()
         });
@@ -3211,7 +3220,8 @@ JitsiConference.prototype._startP2PSession = function(remoteJid) {
 
     this.p2pJingleSession.initialize(
         this.room,
-        this.rtc, {
+        this.rtc,
+        this._signalingLayer, {
             ...this.options.config,
             enableInsertableStreams: this._isE2EEEnabled()
         });
