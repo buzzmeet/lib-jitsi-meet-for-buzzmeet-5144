@@ -85,12 +85,31 @@ const ScreenObtainer = {
             };
         } else if (browser.isElectron()) {
             return this.obtainScreenOnElectron;
+        } else if (browser.isReactNative() && browser.supportsGetDisplayMedia()) {
+            return this.obtainScreenFromGetDisplayMediaRN;
         } else if (browser.supportsGetDisplayMedia()) {
             return this.obtainScreenFromGetDisplayMedia;
         }
         logger.log('Screen sharing not supported on ', browser.getName());
 
         return null;
+    },
+
+    /**
+     * Gets the appropriate constraints for audio sharing.
+     *
+     * @returns {Object|boolean}
+     */
+    _getAudioConstraints() {
+        const { audioQuality } = this.options;
+        const audio = audioQuality?.stereo ? {
+            autoGainControl: false,
+            channelCount: 2,
+            echoCancellation: false,
+            noiseSuppression: false
+        } : true;
+
+        return audio;
     },
 
     /**
@@ -151,9 +170,7 @@ const ScreenObtainer = {
      * @param callback - The success callback.
      * @param errorCallback - The error callback.
      */
-    obtainScreenFromGetDisplayMedia(options, callback, errorCallback) {
-        logger.info('Using getDisplayMedia for screen sharing');
-
+    obtainScreenFromGetDisplayMedia(callback, errorCallback) {
         let getDisplayMedia;
 
         if (navigator.getDisplayMedia) {
@@ -163,32 +180,27 @@ const ScreenObtainer = {
             getDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
         }
 
-        getDisplayMedia({
-            video: true,
-            audio: true,
+        const { desktopSharingFrameRate } = this.options;
+        const video = typeof desktopSharingFrameRate === 'object' ? { frameRate: desktopSharingFrameRate } : true;
+        const audio = this._getAudioConstraints();
+
+        // At the time of this writing 'min' constraint for fps is not supported by getDisplayMedia.
+        video.frameRate && delete video.frameRate.min;
+
+        const constraints = {
+            video,
+            audio,
             cursor: 'always'
-        })
+        };
+
+        logger.info('Using getDisplayMedia for screen sharing', constraints);
+
+        getDisplayMedia(constraints)
             .then(stream => {
-                let applyConstraintsPromise;
-
-                if (stream
-                    && stream.getTracks()
-                    && stream.getTracks().length > 0) {
-                    const videoTrack = stream.getVideoTracks()[0];
-
-                    // Apply video track constraint.
-                    if (videoTrack) {
-                        applyConstraintsPromise = videoTrack.applyConstraints(options.trackOptions);
-                    }
-                } else {
-                    applyConstraintsPromise = Promise.resolve();
-                }
-
-                applyConstraintsPromise.then(() =>
-                    callback({
-                        stream,
-                        sourceId: stream.id
-                    }));
+                callback({
+                    stream,
+                    sourceId: stream.id
+                });
             })
             .catch(error => {
                 const errorDetails = {
@@ -197,7 +209,7 @@ const ScreenObtainer = {
                     errorStack: error && error.stack
                 };
 
-                logger.error('getDisplayMedia error', errorDetails);
+                logger.error('getDisplayMedia error', constraints, errorDetails);
 
                 if (errorDetails.errorMsg && errorDetails.errorMsg.indexOf('denied by system') !== -1) {
                     // On Chrome this is the only thing different between error returned when user cancels
@@ -209,6 +221,42 @@ const ScreenObtainer = {
 
                 errorCallback(new JitsiTrackError(JitsiTrackErrors.SCREENSHARING_USER_CANCELED));
             });
+    },
+    
+    /**
+     * Obtains a screen capture stream using getDisplayMedia.
+     *
+     * @param callback - The success callback.
+     * @param errorCallback - The error callback.
+     */
+    obtainScreenFromGetDisplayMediaRN(callback, errorCallback) {
+        logger.info('Using getDisplayMedia for screen sharing');
+
+        navigator.mediaDevices.getDisplayMedia({ video: true })
+            .then(stream => {
+                callback({
+                    stream,
+                    sourceId: stream.id });
+            })
+            .catch(() => {
+                errorCallback(new JitsiTrackError(JitsiTrackErrors
+                    .SCREENSHARING_USER_CANCELED));
+            });
+    },
+
+    /**
+     * Sets the max frame rate to be used for a desktop track capture.
+     *
+     * @param {number} maxFps capture frame rate to be used for desktop tracks.
+     * @returns {void}
+     */
+    setDesktopSharingFrameRate(maxFps) {
+        logger.info(`Setting the desktop capture rate to ${maxFps}`);
+
+        this.options.desktopSharingFrameRate = {
+            min: SS_DEFAULT_FRAME_RATE,
+            max: maxFps
+        };
     }
 };
 

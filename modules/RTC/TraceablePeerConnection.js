@@ -217,6 +217,12 @@ export default function TraceablePeerConnection(
         this._peerMutedChanged);
     this.options = options;
 
+    // Setup SignalingLayer listeners for source-name based events.
+    this.signalingLayer.on(SignalingEvents.SOURCE_MUTED_CHANGED,
+        (sourceName, isMuted) => this._sourceMutedChanged(sourceName, isMuted));
+    this.signalingLayer.on(SignalingEvents.SOURCE_VIDEO_TYPE_CHANGED,
+        (sourceName, videoType) => this._sourceVideoTypeChanged(sourceName, videoType));
+
     // Make sure constraints is properly formatted in order to provide information about whether or not this
     // connection is P2P to rtcstats.
     const safeConstraints = constraints || {};
