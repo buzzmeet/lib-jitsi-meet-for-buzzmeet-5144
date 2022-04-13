@@ -73,6 +73,24 @@ export class TPCUtils {
     }
 
     /**
+     * Obtains stream encodings that need to be configured on the given track based
+     * on the track media type and the simulcast setting.
+     * @param {JitsiLocalTrack} localTrack
+     */
+    _getStreamEncodings(localTrack) {
+        if (this.pc.isSimulcastOn() && localTrack.isVideoTrack()) {
+            return this.localStreamEncodingsConfig;
+        }
+
+        return localTrack.isVideoTrack()
+            ? [ {
+                active: true,
+                maxBitrate: this.videoBitrates.high
+            } ]
+            : [ { active: true } ];
+    }
+
+    /**
      * Ensures that the ssrcs associated with a FID ssrc-group appear in the correct order, i.e.,
      * the primary ssrc first and the secondary rtx ssrc later. This is important for unified
      * plan since we have only one FID group per media description.
@@ -116,21 +134,18 @@ export class TPCUtils {
     }
 
     /**
-     * Obtains stream encodings that need to be configured on the given track based
-     * on the track media type and the simulcast setting.
-     * @param {JitsiLocalTrack} localTrack
+     * Returns the transceiver associated with a given RTCRtpSender/RTCRtpReceiver.
+     *
+     * @param {string} mediaType - type of track associated with the transceiver 'audio' or 'video'.
+     * @param {JitsiLocalTrack} localTrack - local track to be used for lookup.
+     * @returns {RTCRtpTransceiver}
      */
-    _getStreamEncodings(localTrack) {
-        if (this.pc.isSimulcastOn() && localTrack.isVideoTrack()) {
-            return this.localStreamEncodingsConfig;
-        }
+    findTransceiver(mediaType, localTrack = null) {
+        const transceiver = localTrack?.track && localTrack.getOriginalStream()
+            ? this.pc.peerconnection.getTransceivers().find(t => t.sender?.track?.id === localTrack.getTrackId())
+            : this.pc.peerconnection.getTransceivers().find(t => t.receiver?.track?.kind === mediaType);
 
-        return localTrack.isVideoTrack()
-            ? [ {
-                active: true,
-                maxBitrate: this.videoBitrates.high
-            } ]
-            : [ { active: true } ];
+        return transceiver;
     }
 
     /**
@@ -217,11 +232,17 @@ export class TPCUtils {
         const track = localTrack.getTrack();
 
         if (isInitiator) {
+            const streams = [];
+
+            if (localTrack.getOriginalStream()) {
+                streams.push(localTrack.getOriginalStream());
+            }
+
             // Use pc.addTransceiver() for the initiator case when local tracks are getting added
             // to the peerconnection before a session-initiate is sent over to the peer.
             const transceiverInit = {
                 direction: 'sendrecv',
-                streams: [ localTrack.getOriginalStream() ],
+                streams,
                 sendEncodings: []
             };
 
@@ -474,10 +495,16 @@ export class TPCUtils {
      * @returns {Promise<void>} - resolved when done.
      */
     setEncodings(track) {
-        const transceiver = this.pc.peerconnection.getTransceivers()
-            .find(t => t.sender && t.sender.track && t.sender.track.kind === track.getType());
-        const parameters = transceiver.sender.getParameters();
+        const mediaType = track.getType();
+        const transceiver = this.findTransceiver(mediaType, track);
+        const parameters = transceiver?.sender?.getParameters();
 
+        // Resolve if the encodings are not available yet. This happens immediately after the track is added to the
+        // peerconnection on chrome in unified-plan. It is ok to ignore and not report the error here since the
+        // action that triggers 'addTrack' (like unmute) will also configure the encodings and set bitrates after that.
+        if (!parameters?.encodings?.length) {
+            return Promise.resolve();
+        }
         parameters.encodings = this._getStreamEncodings(track);
 
         return transceiver.sender.setParameters(parameters);
@@ -522,5 +549,29 @@ export class TPCUtils {
     */
     setVideoTransferActive(active) {
         this.setMediaTransferActive(MediaType.VIDEO, active);
+    }
+
+    /**
+     * Ensures that the resolution of the stream encodings are consistent with the values
+     * that were configured on the RTCRtpSender when the source was added to the peerconnection.
+     * This should prevent us from overriding the default values if the browser returns
+     * erroneous values when RTCRtpSender.getParameters is used for getting the encodings info.
+     * @param {Object} parameters - the RTCRtpEncodingParameters obtained from the browser.
+     * @returns {void}
+     */
+    updateEncodingsResolution(parameters) {
+        if (!(browser.isWebKitBased() && parameters.encodings && Array.isArray(parameters.encodings))) {
+            return;
+        }
+        const allEqualEncodings
+            = encodings => encodings.every(encoding => typeof encoding.scaleResolutionDownBy !== 'undefined'
+                && encoding.scaleResolutionDownBy === encodings[0].scaleResolutionDownBy);
+
+        // Implement the workaround only when all the encodings report the same resolution.
+        if (allEqualEncodings(parameters.encodings)) {
+            parameters.encodings.forEach((encoding, idx) => {
+                encoding.scaleResolutionDownBy = this.localStreamEncodingsConfig[idx].scaleResolutionDownBy;
+            });
+        }
     }
 }
