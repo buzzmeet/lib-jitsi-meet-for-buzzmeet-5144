@@ -1409,11 +1409,15 @@ export default class JingleSessionPC extends JingleSession {
      * @returns {Promise} promise that will be resolved when the operation is
      * successful and rejected otherwise.
      */
-    setSenderVideoConstraint(maxFrameHeight) {
+     setSenderVideoConstraint(maxFrameHeight, sourceName = null) {
         if (this._assertNotEnded()) {
-            logger.info(`${this} setSenderVideoConstraint: ${maxFrameHeight}`);
+            logger.info(`${this} setSenderVideoConstraint: ${maxFrameHeight}, sourceName: ${sourceName}`);
 
-            return this.peerconnection.setSenderVideoConstraint(maxFrameHeight);
+            const jitsiLocalTrack = sourceName
+                ? this.rtc.getLocalVideoTracks().find(track => track.getSourceName() === sourceName)
+                : this.rtc.getLocalVideoTrack();
+
+            return this.peerconnection.setSenderVideoConstraints(maxFrameHeight, jitsiLocalTrack);
         }
 
         return Promise.resolve();
@@ -1704,10 +1708,21 @@ export default class JingleSessionPC extends JingleSession {
                     ? this._processRemoteAddSource(addOrRemoveSsrcInfo)
                     : this._processRemoteRemoveSource(addOrRemoveSsrcInfo);
 
-            this._renegotiate(newRemoteSdp.raw)
-                .then(() => {
-                    const newLocalSdp
-                        = new SDP(this.peerconnection.localDescription.sdp);
+            // Add a workaround for a bug in Chrome (unified plan) for p2p connection. When the media direction on
+            // the transceiver goes from "inactive" (both users join muted) to "recvonly" (peer unmutes), the browser
+            // doesn't seem to create a decoder if the signaling state changes from "have-local-offer" to "stable".
+            // Therefore, initiate a responder renegotiate even if the endpoint is the offerer to workaround this issue.
+            // TODO - open a chrome bug and update the comments.
+            const remoteDescription = new RTCSessionDescription({
+                type: 'offer',
+                sdp: newRemoteSdp.raw
+            });
+            const promise = isAdd && this.isP2P && browser.usesUnifiedPlan()
+                ? this._responderRenegotiate(remoteDescription)
+                : this._renegotiate(newRemoteSdp.raw);
+
+            promise.then(() => {
+                const newLocalSdp = new SDP(this.peerconnection.localDescription.sdp);
 
                     logger.log(
                         `${logPrefix} - OK, SDPs: `, oldLocalSdp, newLocalSdp);
@@ -1962,14 +1977,11 @@ export default class JingleSessionPC extends JingleSession {
                     }
 
                     return promise.then(() => {
-                        if (newTrack && newTrack.isVideoTrack()) {
-                            // FIXME set all sender parameters in one go?
-                            // Set the degradation preference on the new video sender.
-                            return this.peerconnection.setSenderVideoDegradationPreference()
+                        if (newTrack?.isVideoTrack()) {
+                            logger.debug(`${this} replaceTrack worker: configuring video stream`);
 
-                                // Apply the cached video constraints on the new video sender.
-                                .then(() => this.peerconnection.setSenderVideoConstraint())
-                                .then(() => this.peerconnection.setMaxBitRate());
+                            // Configure the video encodings after the track is replaced.
+                            return this.peerconnection.configureSenderVideoEncodings(newTrack);
                         }
                     });
                 })
@@ -2116,12 +2128,10 @@ export default class JingleSessionPC extends JingleSession {
         return this._addRemoveTrackAsMuteUnmute(
             false /* add as unmute */, track)
             .then(() => {
-                // Apply the video constraints, max bitrates and degradation preference on
-                // the video sender if needed.
-                if (track.isVideoTrack() && browser.doesVideoMuteByStreamRemove()) {
-                    return this.setSenderMaxBitrates()
-                        .then(() => this.setSenderVideoDegradationPreference())
-                        .then(() => this.setSenderVideoConstraint());
+                // Configure the video encodings after the track is unmuted. If the user joins the call muted and
+                // unmutes it the first time, all the parameters need to be configured.
+                if (track.isVideoTrack()) {
+                    return this.peerconnection.configureSenderVideoEncodings(track);
                 }
             });
     }

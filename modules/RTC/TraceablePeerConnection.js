@@ -2188,6 +2188,37 @@ TraceablePeerConnection.prototype._adjustLocalMediaDirection = function(
     });
 }
 
+/**
+ * Configures the stream encodings depending on the video type and the bitrates configured.
+ *
+ * @param {JitsiLocalTrack} - The local track for which the sender encodings have to configured.
+ * @returns {Promise} promise that will be resolved when the operation is successful and rejected otherwise.
+ */
+ TraceablePeerConnection.prototype.configureSenderVideoEncodings = function(localVideoTrack = null) {
+    if (FeatureFlags.isSourceNameSignalingEnabled()) {
+        if (localVideoTrack) {
+            return this.setSenderVideoConstraints(
+                this._senderMaxHeights.get(localVideoTrack.getSourceName()),
+                localVideoTrack);
+        }
+        const promises = [];
+
+        for (const track of this.getLocalVideoTracks()) {
+            promises.push(this.setSenderVideoConstraints(this._senderMaxHeights.get(track.getSourceName()), track));
+        }
+
+        return Promise.allSettled(promises);
+    }
+
+    let localTrack = localVideoTrack;
+
+    if (!localTrack) {
+        localTrack = this.getLocalVideoTracks()[0];
+    }
+
+    return this.setSenderVideoConstraints(this._senderVideoMaxHeight, localTrack);
+};
+
 TraceablePeerConnection.prototype.setLocalDescription = function(description) {
     let localSdp = description;
 
@@ -2369,8 +2400,7 @@ TraceablePeerConnection.prototype.setMaxBitRate = function() {
             const scaleFactor = this.senderVideoMaxHeight
                 ? Math.floor(localVideoTrack.resolution / this.senderVideoMaxHeight)
                 : 1;
-            const encoding = this.tpcUtils.localStreamEncodingsConfig
-                .find(layer => layer.scaleResolutionDownBy === scaleFactor);
+            const encoding = this.tpcUtils.localStreamEncodingsConfig?.find(layer => layer.scaleResolutionDownBy === scaleFactor);
 
             if (encoding) {
                 logger.info(`${this} Setting a max bitrate of ${encoding.maxBitrate} bps on local video track`);
@@ -2484,6 +2514,116 @@ TraceablePeerConnection.prototype.setRemoteDescription = function(description) {
                     this);
                 reject(err);
             });
+    });
+};
+
+/**
+ * Changes the resolution of the video stream that is sent to the peer based on the resolution requested by the peer
+ * and user preference, sets the degradation preference on the sender based on the video type, configures the maximum
+ * bitrates on the send stream.
+ *
+ * @param {number} frameHeight - The max frame height to be imposed on the outgoing video stream.
+ * @param {JitsiLocalTrack} - The local track for which the sender constraints have to be applied.
+ * @returns {Promise} promise that will be resolved when the operation is successful and rejected otherwise.
+ */
+ TraceablePeerConnection.prototype.setSenderVideoConstraints = function(frameHeight, localVideoTrack) {
+    if (frameHeight < 0) {
+        throw new Error(`Invalid frameHeight: ${frameHeight}`);
+    }
+
+    // XXX: This is not yet supported on mobile.
+    if (browser.isReactNative()) {
+        return Promise.resolve();
+    }
+
+    if (FeatureFlags.isSourceNameSignalingEnabled()) {
+        this._senderMaxHeights.set(localVideoTrack.getSourceName(), frameHeight);
+    } else {
+        this._senderVideoMaxHeight = frameHeight;
+    }
+
+    if (!localVideoTrack || localVideoTrack.isMuted()) {
+        return Promise.resolve();
+    }
+    const videoSender = this.findSenderForTrack(localVideoTrack.getTrack());
+
+    if (!videoSender) {
+        return Promise.resolve();
+    }
+    const parameters = videoSender.getParameters();
+
+    if (!parameters?.encodings?.length) {
+        return Promise.resolve();
+    }
+
+    // Set the degradation preference.
+    const preference = this.isSharingLowFpsScreen()
+        ? DEGRADATION_PREFERENCE_DESKTOP // Prefer resolution for low fps share.
+        : DEGRADATION_PREFERENCE_CAMERA; // Prefer frame-rate for high fps share and camera.
+
+    parameters.degradationPreference = preference;
+    logger.info(`${this} Setting degradation preference [preference=${preference},track=${localVideoTrack}`);
+
+    // Calculate the encodings active state based on the resolution requested by the bridge.
+    this.encodingsEnabledState = this.tpcUtils.calculateEncodingsActiveState(localVideoTrack, frameHeight);
+    const maxBitrates = this.tpcUtils.calculateEncodingsBitrates(localVideoTrack);
+    const videoType = localVideoTrack.getVideoType();
+
+    if (this.isSimulcastOn()) {
+        for (const encoding in parameters.encodings) {
+            if (parameters.encodings.hasOwnProperty(encoding)) {
+                parameters.encodings[encoding].active = this.encodingsEnabledState[encoding];
+
+                // Firefox doesn't follow the spec and lets application specify the degradation preference on the
+                // encodings.
+                browser.isFirefox() && (parameters.encodings[encoding].degradationPreference = preference);
+
+                // Max bitrates are configured on the encodings only for VP8.
+                if (this.getConfiguredVideoCodec() === CodecMimeType.VP8
+                    && (this.options?.videoQuality?.maxBitratesVideo
+                        || this.isSharingLowFpsScreen()
+                        || this._usesUnifiedPlan)) {
+                    parameters.encodings[encoding].maxBitrate = maxBitrates[encoding];
+                }
+            }
+        }
+        this.tpcUtils.updateEncodingsResolution(parameters);
+
+    // For p2p and cases and where simulcast is explicitly disabled.
+    } else if (frameHeight > 0) {
+        let scaleFactor = HD_SCALE_FACTOR;
+
+        // Do not scale down encodings for desktop tracks for non-simulcast case.
+        if (videoType === VideoType.CAMERA && localVideoTrack.resolution > frameHeight) {
+            scaleFactor = Math.floor(localVideoTrack.resolution / frameHeight);
+        }
+
+        parameters.encodings[0].active = true;
+        parameters.encodings[0].scaleResolutionDownBy = scaleFactor;
+
+        // Firefox doesn't follow the spec and lets application specify the degradation preference on the encodings.
+        browser.isFirefox() && (parameters.encodings[0].degradationPreference = preference);
+
+        // Configure the bitrate.
+        if (this.getConfiguredVideoCodec() === CodecMimeType.VP8 && this.options?.videoQuality?.maxBitratesVideo) {
+            let bitrate = this.getTargetVideoBitrates()?.high;
+
+            if (videoType === VideoType.CAMERA) {
+                bitrate = this.tpcUtils.localStreamEncodingsConfig
+                    .find(layer => layer.scaleResolutionDownBy === scaleFactor)?.maxBitrate;
+                bitrate = bitrate ? bitrate : this.getTargetVideoBitrates()?.high;
+            }
+            parameters.encodings[0].maxBitrate = bitrate;
+        }
+    } else {
+        parameters.encodings[0].active = false;
+    }
+
+    logger.info(`${this} setting max height=${frameHeight},encodings=${JSON.stringify(parameters.encodings)}`);
+
+    return videoSender.setParameters(parameters).then(() => {
+        localVideoTrack.maxEnabledResolution = frameHeight;
+        this.eventEmitter.emit(RTCEvents.LOCAL_TRACK_MAX_ENABLED_RESOLUTION_CHANGED, localVideoTrack);
     });
 };
 
