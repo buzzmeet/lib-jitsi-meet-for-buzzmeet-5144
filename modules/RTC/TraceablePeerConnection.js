@@ -2273,7 +2273,7 @@ TraceablePeerConnection.prototype.setSenderVideoDegradationPreference = function
         return Promise.resolve();
     }
     const localVideoTrack = this.getLocalVideoTrack();
-    const videoSender = this.findSenderByKind(MediaType.VIDEO);
+    let videoSender = this.findSenderByKind(MediaType.VIDEO);
 
     if (!videoSender) {
         return Promise.resolve();
@@ -2332,7 +2332,7 @@ TraceablePeerConnection.prototype.setMaxBitRate = function() {
 
     const presenterEnabled = localVideoTrack._originalStream
         && localVideoTrack._originalStream.id !== localVideoTrack.getStreamId();
-    const videoSender = this.findSenderByKind(MediaType.VIDEO);
+    let videoSender = this.findSenderByKind(MediaType.VIDEO);
 
     if (!videoSender) {
         return Promise.resolve();
@@ -2519,7 +2519,7 @@ TraceablePeerConnection.prototype.setSenderVideoConstraint = function(frameHeigh
     if (!localVideoTrack || localVideoTrack.isMuted() || localVideoTrack.videoType !== VideoType.CAMERA) {
         return Promise.resolve();
     }
-    const videoSender = this.findSenderByKind(MediaType.VIDEO);
+    let videoSender = this.findSenderByKind(MediaType.VIDEO);
 
     if (!videoSender) {
         return Promise.resolve();
