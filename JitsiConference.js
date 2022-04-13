@@ -1238,7 +1238,7 @@ JitsiConference.prototype.replaceTrack = function(oldTrack, newTrack) {
     }
     let oldTrackBelongsToConference = this === oldTrack?.conference;
 
-    if (oldTrackBelongsToConference && oldTrack.disposed) {
+    if (oldTrackBelongsToConference && oldTrack?.disposed) {
         return Promise.reject(new JitsiTrackError(JitsiTrackErrors.TRACK_IS_DISPOSED));
     }
     if (newTrack?.disposed) {
@@ -1249,8 +1249,8 @@ JitsiConference.prototype.replaceTrack = function(oldTrack, newTrack) {
         logger.warn(`JitsiConference.replaceTrack oldTrack (${oldTrack} does not belong to this conference`);
     }
 
-    if (FeatureFlags.isMultiStreamSupportEnabled() && oldTrack && newTrack && oldTrack.isVideoTrack()) {
-        newTrack.setSourceName(oldTrack.getSourceName());
+    if (FeatureFlags.isMultiStreamSupportEnabled() && oldTrack && newTrack && oldTrack?.isVideoTrack()) {
+        newTrack?.setSourceName(oldTrack?.getSourceName());
     }
 
     // Now replace the stream at the lower levels

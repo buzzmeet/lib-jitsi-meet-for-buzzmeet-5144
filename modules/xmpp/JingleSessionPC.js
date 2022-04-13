@@ -1918,7 +1918,7 @@ export default class JingleSessionPC extends JingleSession {
                 // Transition from camera to desktop share
                 // or transition from one camera source to another.
                 if (this.peerconnection.options.capScreenshareBitrate
-                    && oldTrack && newTrack && newTrack.isVideoTrack()) {
+                    && oldTrack && newTrack && newTrack?.isVideoTrack()) {
                     // Clearing current primary SSRC will make
                     // the SdpConsistency generate a new one which will result
                     // with:
@@ -1937,7 +1937,7 @@ export default class JingleSessionPC extends JingleSession {
                     this.peerconnection.clearRecvonlySsrc();
 
                 // Transition from video to no video
-                } else if (oldTrack && oldTrack.isVideoTrack() && !newTrack) {
+                } else if (oldTrack && oldTrack?.isVideoTrack() && !newTrack) {
                     // Clearing current primary SSRC and generating the recvonly
                     // will result in:
                     // 1. source-remove for the old video stream
