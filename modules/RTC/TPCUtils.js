@@ -3,6 +3,7 @@ import transform from 'sdp-transform';
 
 import * as MediaType from '../../service/RTC/MediaType';
 import RTCEvents from '../../service/RTC/RTCEvents';
+import { VideoType } from '../../service/RTC/VideoType';
 import browser from '../browser';
 
 const logger = getLogger(__filename);
