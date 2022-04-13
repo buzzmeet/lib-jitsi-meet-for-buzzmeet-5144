@@ -3,7 +3,7 @@
  * Enumeration of the video types
  * @type {{CAMERA: string, DESKTOP: string}}
  */
-const VideoType = {
+export const VideoType = {
     /**
      * The camera video type.
      */
@@ -15,4 +15,6 @@ const VideoType = {
     DESKTOP: 'desktop'
 };
 
-module.exports = VideoType;
+export const CAMERA = VideoType.CAMERA;
+export const DESKTOP = VideoType.DESKTOP;
+export default VideoType;
