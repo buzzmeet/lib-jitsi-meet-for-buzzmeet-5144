@@ -1024,37 +1024,36 @@ TraceablePeerConnection.prototype._remoteTrackRemoved = function(
     const streamId = RTC.getStreamID(stream);
     const trackId = track && RTC.getTrackID(track);
 
-    logger.info(`${this} - remote track removed: ${streamId}, ${trackId}`);
+    if (!RTC.isUserStreamById(streamId)) {
+        logger.info(`${this} ignored remote 'stream removed' event for non-user stream[id=${streamId}]`);
+
+        return;
+    }
 
     if (!streamId) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(`${this} remote track removal failed - no stream ID`));
+        GlobalOnErrorHandler.callErrorHandler(new Error(`${this} remote track removal failed - no stream ID`));
 
         return;
     }
 
     if (!trackId) {
-        GlobalOnErrorHandler.callErrorHandler(
-            new Error(`${this} remote track removal failed - no track ID`));
+        GlobalOnErrorHandler.callErrorHandler(new Error(`${this} remote track removal failed - no track ID`));
 
         return;
     }
 
-    if (!this._removeRemoteTrackById(streamId, trackId)) {
-        // NOTE this warning is always printed when user leaves the room,
-        // because we remove remote tracks manually on MUC member left event,
-        // before the SSRCs are removed by Jicofo. In most cases it is fine to
-        // ignore this warning, but still it's better to keep it printed for
-        // debugging purposes.
-        //
-        // We could change the behaviour to emit track removed only from here,
-        // but the order of the events will change and consuming apps could
-        // behave unexpectedly (the "user left" event would come before "track
-        // removed" events).
-        logger.warn(
-            `${this} Removed track not found for msid: ${streamId},
-             track id: ${trackId}`);
+    const toBeRemoved = this.getRemoteTracks().find(
+        remoteTrack => remoteTrack.getStreamId() === streamId
+        && remoteTrack.getTrackId() === trackId);
+
+    if (!toBeRemoved) {
+        GlobalOnErrorHandler.callErrorHandler(new Error(`${this} remote track removal failed - track not found`));
+
+        return;
     }
+
+    logger.info(`${this} remote track removed stream[id=${streamId},trackId=${trackId}]`);
+    this._removeRemoteTrack(toBeRemoved);
 };
 
 /**

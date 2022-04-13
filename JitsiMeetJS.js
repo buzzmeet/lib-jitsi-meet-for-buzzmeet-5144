@@ -405,46 +405,6 @@ export default _mergeNamespaceAndModule({
             })
             .catch(error => {
                 promiseFulfilled = true;
-
-                if (error.name === JitsiTrackErrors.UNSUPPORTED_RESOLUTION
-                    && !browser.usesNewGumFlow()) {
-                    const oldResolution = options.resolution || '720';
-                    const newResolution = getLowerResolution(oldResolution);
-
-                    if (newResolution !== null) {
-                        options.resolution = newResolution;
-
-                        logger.debug(
-                            'Retry createLocalTracks with resolution',
-                            newResolution);
-
-                        Statistics.sendAnalytics(createGetUserMediaEvent(
-                            'warning',
-                            {
-                                'old_resolution': oldResolution,
-                                'new_resolution': newResolution,
-                                reason: 'unsupported resolution'
-                            }));
-
-                        return this.createLocalTracks(
-                            options,
-                            undefined,
-                            originalOptions || Object.assign({}, options));
-                    }
-
-                    // We tried everything. If there is a mandatory device id,
-                    // remove it and let gum find a device to use.
-                    if (originalOptions
-                        && error.gum.constraints
-                        && error.gum.constraints.video
-                        && error.gum.constraints.video.mandatory
-                        && error.gum.constraints.video.mandatory.sourceId) {
-                        originalOptions.cameraDeviceId = undefined;
-
-                        return this.createLocalTracks(originalOptions);
-                    }
-                }
-
                 if (error.name
                         === JitsiTrackErrors.SCREENSHARING_USER_CANCELED) {
                     // User cancelled action is not really an error, so only
