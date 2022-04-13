@@ -8,10 +8,17 @@ import browser from '../browser';
 import FeatureFlags from '../flags/FeatureFlags';
 
 const logger = getLogger(__filename);
+const DESKTOP_SHARE_RATE = 500000;
+const LD_BITRATE = 200000;
+const SD_BITRATE = 700000;
 const SIM_LAYER_1_RID = '1';
 const SIM_LAYER_2_RID = '2';
 const SIM_LAYER_3_RID = '3';
 
+export const HD_BITRATE = 2500000;
+export const HD_SCALE_FACTOR = 1;
+export const LD_SCALE_FACTOR = 4;
+export const SD_SCALE_FACTOR = 2;
 export const SIM_LAYER_RIDS = [ SIM_LAYER_1_RID, SIM_LAYER_2_RID, SIM_LAYER_3_RID ];
 
 /**
@@ -346,7 +353,7 @@ export class TPCUtils {
             // send the desktop stream at all if only the high resolution stream is enabled.
             if (this.pc.isSharingLowFpsScreen()
                 && localVideoTrack.getVideoType() === VideoType.DESKTOP
-                && this.pc.usesUnifiedPlan()
+                && browser.usesUnifiedPlan()
                 && !browser.isWebKitBased()
                 && this.localStreamEncodingsConfig[idx].scaleResolutionDownBy !== HD_SCALE_FACTOR) {
                 active = false;
@@ -382,7 +389,7 @@ export class TPCUtils {
                 // For high fps screenshare, 'maxBitrate' setting must be cleared on Chrome in plan-b, because
                 // if simulcast is enabled for screen and maxBitrates are set then Chrome will not send the
                 // desktop stream.
-                : videoType === VideoType.DESKTOP && browser.isChromiumBased() && !this.pc.usesUnifiedPlan()
+                : videoType === VideoType.DESKTOP && browser.isChromiumBased() && !browser.usesUnifiedPlan()
                     ? undefined
                     : encoding.maxBitrate;
 
