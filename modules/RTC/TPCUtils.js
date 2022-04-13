@@ -311,6 +311,86 @@ export class TPCUtils {
     }
 
     /**
+     * Returns the calculated active state of the simulcast encodings based on the frame height requested for the send
+     * stream. All the encodings that have a resolution lower than the frame height requested will be enabled.
+     *
+     * @param {JitsiLocalTrack} localVideoTrack The local video track.
+     * @param {number} newHeight The resolution requested for the video track.
+     * @returns {Array<boolean>}
+     */
+     calculateEncodingsActiveState(localVideoTrack, newHeight) {
+        const localTrack = localVideoTrack.getTrack();
+        const { height } = localTrack.getSettings();
+        const encodingsState = this.localStreamEncodingsConfig
+        .map(encoding => height / encoding.scaleResolutionDownBy)
+        .map((frameHeight, idx) => {
+            let active = localVideoTrack.getVideoType() === VideoType.CAMERA
+
+                // Keep the LD stream enabled even when the LD stream's resolution is higher than of the requested
+                // resolution. This can happen when camera is captured at resolutions higher than 720p but the
+                // requested resolution is 180. Since getParameters doesn't give us information about the resolutions
+                // of the simulcast encodings, we have to rely on our initial config for the simulcast streams.
+                ? newHeight > 0 && this.localStreamEncodingsConfig[idx]?.scaleResolutionDownBy === LD_SCALE_FACTOR
+                    ? true
+                    : frameHeight <= newHeight
+
+                // Keep all the encodings for desktop track active.
+                : true;
+
+            // Disable the lower spatial layers for screensharing in Unified plan when low fps screensharing is in
+            // progress. Sending all three streams often results in the browser suspending the high resolution in low
+            // b/w and cpu cases, especially on the low end machines. Suspending the low resolution streams ensures
+            // that the highest resolution stream is available always. Safari is an exception here since it does not
+            // send the desktop stream at all if only the high resolution stream is enabled.
+            if (this.pc.isSharingLowFpsScreen()
+                && localVideoTrack.getVideoType() === VideoType.DESKTOP
+                && this.pc.usesUnifiedPlan()
+                && !browser.isWebKitBased()
+                && this.localStreamEncodingsConfig[idx].scaleResolutionDownBy !== HD_SCALE_FACTOR) {
+                active = false;
+            }
+
+            return active;
+        });
+
+        return encodingsState;
+    }
+
+    /**
+     * Returns the calculates max bitrates that need to be configured on the simulcast encodings based on the video
+     * type and other considerations associated with screenshare.
+     *
+     * @param {JitsiLocalTrack} localVideoTrack The local video track.
+     * @returns {Array<number>}
+     */
+    calculateEncodingsBitrates(localVideoTrack) {
+        const videoType = localVideoTrack.getVideoType();
+        const desktopShareBitrate = this.pc.options?.videoQuality?.desktopBitrate || DESKTOP_SHARE_RATE;
+        const presenterEnabled = localVideoTrack._originalStream
+            && localVideoTrack._originalStream.id !== localVideoTrack.getStreamId();
+
+        const encodingsBitrates = this.localStreamEncodingsConfig
+        .map(encoding => {
+            const bitrate = this.pc.isSharingLowFpsScreen() && !browser.isWebKitBased()
+
+                // For low fps screensharing, set a max bitrate of 500 Kbps when presenter is not turned on, 2500 Kbps
+                // otherwise.
+                ? presenterEnabled ? HD_BITRATE : desktopShareBitrate
+
+                // For high fps screenshare, 'maxBitrate' setting must be cleared on Chrome in plan-b, because
+                // if simulcast is enabled for screen and maxBitrates are set then Chrome will not send the
+                // desktop stream.
+                : videoType === VideoType.DESKTOP && browser.isChromiumBased() && !this.pc.usesUnifiedPlan()
+                    ? undefined
+                    : encoding.maxBitrate;
+
+            return bitrate;
+        });
+
+        return encodingsBitrates;
+    }
+
+    /**
      * Replaces the existing track on a RTCRtpSender with the given track.
      * @param {JitsiLocalTrack} oldTrack - existing track on the sender that needs to be removed.
      * @param {JitsiLocalTrack} newTrack - new track that needs to be added to the sender.
