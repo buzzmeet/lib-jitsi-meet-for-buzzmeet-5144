@@ -5,7 +5,8 @@ import { getLogger } from 'jitsi-meet-logger';
 import transform from 'sdp-transform';
 
 import * as CodecMimeType from '../../service/RTC/CodecMimeType';
-import * as MediaType from '../../service/RTC/MediaType';
+import { MediaDirection } from '../../service/RTC/MediaDirection';
+import { MediaType } from '../../service/RTC/MediaType';
 import RTCEvents from '../../service/RTC/RTCEvents';
 import * as SignalingEvents from '../../service/RTC/SignalingEvents';
 import * as VideoType from '../../service/RTC/VideoType';
