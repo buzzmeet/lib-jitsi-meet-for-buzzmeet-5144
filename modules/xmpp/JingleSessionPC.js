@@ -1946,12 +1946,6 @@ export default class JingleSessionPC extends JingleSession {
                     this.peerconnection.generateRecvonlySsrc();
                 }
             }
-            // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.14
-            else {
-                if (!oldTrack && newTrack) {
-                    this.peerconnection.setLocalDescription(null).catch(console.log);
-                }
-            }
 
             this.peerconnection.replaceTrack(oldTrack, newTrack)
                 .then(shouldRenegotiate => {
@@ -2372,6 +2366,16 @@ export default class JingleSessionPC extends JingleSession {
      * @param newSDP SDP object for new description.
      */
     notifyMySSRCUpdate(oldSDP, newSDP) {
+        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.14
+        let isScreenShare = false;
+        const localTracks = this.peerconnection.localTracks;
+        Object.keys(localTracks).forEach(key => {
+            const localTrack = localTracks.get(key);
+
+            if ("video" === localTrack.type && "desktop" === localTrack.videoType) {
+                isScreenShare = true;
+            }
+        });
 
         if (this.state !== JingleSessionState.ACTIVE) {
             logger.warn(`Skipping SSRC update in '${this.state} ' state.`);
@@ -2407,6 +2411,10 @@ export default class JingleSessionPC extends JingleSession {
                     ssrcs = ssrcs.concat(signaledSsrcs);
                 }
             });
+
+            if (isScreenShare) {
+                return newSDP;
+            }
 
             return {
                 mediaType,
