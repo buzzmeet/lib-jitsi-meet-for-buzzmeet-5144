@@ -1372,10 +1372,31 @@ export default class ChatRoom extends Listenable {
      * @param values
      */
     addToPresence(key, values) {
+        return this.addOrReplaceInPresence(key, values);
+    }
+    
+    /**
+     * Adds the key to the presence map, overriding any previous value.
+     * @param key The key to add or replace.
+     * @param values The new values.
+     * @returns {boolean|null} <tt>true</tt> if the operation succeeded or <tt>false</tt> when no add or replace was
+     * performed as the value was already there.
+     */
+    addOrReplaceInPresence(key, values) {
         values.tagName = key;
+
+        const matchingNodes = this.presMap.nodes.filter(node => key === node.tagName);
+
+        // if we have found just one, let's check is it the same
+        if (matchingNodes.length === 1 && isEqual(matchingNodes[0], values)) {
+            return false;
+        }
+
         this.removeFromPresence(key);
         this.presMap.nodes.push(values);
         this.presenceUpdateTime = Date.now();
+
+        return true;
     }
 
     /**

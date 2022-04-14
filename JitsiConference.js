@@ -355,17 +355,25 @@ JitsiConference.prototype._init = function(options = {}) {
     this._sendConferenceJoinAnalyticsEvent = this._sendConferenceJoinAnalyticsEvent.bind(this);
     this.room.addListener(XMPPEvents.MEETING_ID_SET, this._sendConferenceJoinAnalyticsEvent);
 
-    this.e2eping = new E2ePing(
-        this,
-        config,
-        (message, to) => {
-            try {
-                this.sendMessage(
-                    message, to, true /* sendThroughVideobridge */);
-            } catch (error) {
-                logger.warn('Failed to send E2E ping request or response.', error && error.msg);
-            }
-        });
+    this._removeLocalSourceOnReject = this._removeLocalSourceOnReject.bind(this);
+    this._updateRoomPresence = this._updateRoomPresence.bind(this);
+    this.room.addListener(XMPPEvents.SESSION_ACCEPT, this._updateRoomPresence);
+    this.room.addListener(XMPPEvents.SOURCE_ADD, this._updateRoomPresence);
+    this.room.addListener(XMPPEvents.SOURCE_ADD_ERROR, this._removeLocalSourceOnReject);
+    this.room.addListener(XMPPEvents.SOURCE_REMOVE, this._updateRoomPresence);
+
+    if (config.e2eping?.enabled) {
+        this.e2eping = new E2ePing(
+            this,
+            config,
+            (message, to) => {
+                try {
+                    this.sendMessage(message, to, true /* sendThroughVideobridge */);
+                } catch (error) {
+                    logger.warn('Failed to send E2E ping request or response.', error && error.msg);
+                }
+            });
+    }
 
     if (!this.rtc) {
         this.rtc = new RTC(this, options);
@@ -618,7 +626,11 @@ JitsiConference.prototype.leave = function() {
             XMPPEvents.CONFERENCE_PROPERTIES_CHANGED,
             this._updateProperties);
 
-        room.removeListener(XMPPEvents.MEETING_ID_SET, this._sendConferenceJoinAnalyticsEvent);
+    room.removeListener(XMPPEvents.MEETING_ID_SET, this._sendConferenceJoinAnalyticsEvent);
+    room.removeListener(XMPPEvents.SESSION_ACCEPT, this._updateRoomPresence);
+    room.removeListener(XMPPEvents.SOURCE_ADD, this._updateRoomPresence);
+    room.removeListener(XMPPEvents.SOURCE_ADD_ERROR, this._removeLocalSourceOnReject);
+    room.removeListener(XMPPEvents.SOURCE_REMOVE, this._updateRoomPresence);
 
         this.eventManager.removeXMPPListeners();
 
@@ -1001,130 +1013,6 @@ JitsiConference.prototype.addTrack = function(track) {
 
 /**
  * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
- * @param {*} jingleSession 
- * @param {*} ctx 
- * @returns 
- */
-JitsiConference.prototype._updateRoomPresence = function(jingleSession, ctx) {
-    if (!jingleSession) {
-        return;
-    }
-
-    // skips sending presence twice for the same pass of updating ssrcs
-    if (ctx) {
-        if (ctx.skip) {
-            return;
-        }
-        ctx.skip = true;
-    }
-
-    let presenceChanged = false;
-    let muteStatusChanged, videoTypeChanged;
-    const localTracks = this.getLocalTracks();
-    const localAudioTracks = jingleSession.peerconnection.getLocalTracks(MediaType.AUDIO);
-    const localVideoTracks = jingleSession.peerconnection.getLocalTracks(MediaType.VIDEO);
-
-    // Set presence for all the available local tracks.
-    for (const track of localTracks) {
-        muteStatusChanged = this._setTrackMuteStatus(track.getType(), track, track.isMuted());
-        if (track.getType() === MediaType.VIDEO) {
-            videoTypeChanged = this._setNewVideoType(track);
-        }
-        presenceChanged = muteStatusChanged || videoTypeChanged;
-    }
-
-    // Set the presence in the legacy format if there are no local tracks and multi stream support is not enabled.
-    if (!FeatureFlags.isMultiStreamSupportEnabled()) {
-        let audioMuteStatusChanged, videoMuteStatusChanged;
-
-        if (!localAudioTracks?.length) {
-            audioMuteStatusChanged = this._setTrackMuteStatus(MediaType.AUDIO, undefined, true);
-        }
-        if (!localVideoTracks?.length) {
-            videoMuteStatusChanged = this._setTrackMuteStatus(MediaType.VIDEO, undefined, true);
-            videoTypeChanged = this._setNewVideoType();
-        }
-
-        presenceChanged = presenceChanged || audioMuteStatusChanged || videoMuteStatusChanged || videoTypeChanged;
-    }
-
-    presenceChanged && this.room.sendPresence();
-};
-
-/**
- * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
- * Sets the video type.
- * @param track
- * @return <tt>true</tt> if video type was changed in presence.
- * @private
- */
- JitsiConference.prototype._setNewVideoType = function(track) {
-    let videoTypeChanged = false;
-
-    if (FeatureFlags.isSourceNameSignalingEnabled() && track) {
-        videoTypeChanged = this._signalingLayer.setTrackVideoType(track.getSourceName(), track.videoType);
-    }
-
-    if (!FeatureFlags.isMultiStreamSupportEnabled()) {
-        const videoTypeTagName = 'videoType';
-
-        // If track is missing we revert to default type Camera, the case where we screenshare and
-        // we return to be video muted.
-        const trackVideoType = track ? track.videoType : VideoType.CAMERA;
-
-        // If video type is camera and there is no videoType in presence, we skip adding it, as this is the default one
-        if (trackVideoType !== VideoType.CAMERA || this.room.getFromPresence(videoTypeTagName)) {
-            // We will not use this.sendCommand here to avoid sending the presence immediately, as later we may also
-            // set the mute status.
-            const legacyTypeChanged = this.room.addOrReplaceInPresence(videoTypeTagName, { value: trackVideoType });
-
-            videoTypeChanged = videoTypeChanged || legacyTypeChanged;
-        }
-    }
-
-    return videoTypeChanged;
-};
-
-/**
- * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
- * Sets mute status.
- * @param mediaType
- * @param localTrack
- * @param isMuted
- * @param <tt>true</tt> when presence was changed, <tt>false</tt> otherwise.
- * @private
- */
- JitsiConference.prototype._setTrackMuteStatus = function(mediaType, localTrack, isMuted) {
-    let presenceChanged = false;
-
-    if (FeatureFlags.isSourceNameSignalingEnabled() && localTrack) {
-        presenceChanged = this._signalingLayer.setTrackMuteStatus(localTrack.getSourceName(), isMuted);
-    }
-
-    // Add the 'audioMuted' and 'videoMuted' tags when source name signaling is enabled for backward compatibility.
-    // It won't be used anymore when multiple stream support is enabled.
-    if (!FeatureFlags.isMultiStreamSupportEnabled()) {
-        let audioMuteChanged, videoMuteChanged;
-
-        if (!this.room) {
-            return false;
-        }
-
-        if (mediaType === MediaType.AUDIO) {
-            audioMuteChanged = this.room.addAudioInfoToPresence(isMuted);
-        } else {
-            videoMuteChanged = this.room.addVideoInfoToPresence(isMuted);
-        }
-
-        presenceChanged = presenceChanged || audioMuteChanged || videoMuteChanged;
-    }
-
-    return presenceChanged;
-};
-
-
-/**
- * [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.12
  * @param {*} localtrack 
  */
 JitsiConference.prototype._sendBridgeVideoTypeMessage = function(localtrack) {
@@ -1318,6 +1206,24 @@ JitsiConference.prototype._doReplaceTrack = function(oldTrack, newTrack) {
 };
 
 /**
+ * Handler for when a source-add for a local source is rejected by Jicofo.
+ *
+ * @param {JingleSessionPC} jingleSession - The media session.
+ * @param {Error} error - The error message.
+ * @param {MediaType} mediaType - The media type of the track associated with the source that was rejected.
+ * @returns {void}
+ */
+JitsiConference.prototype._removeLocalSourceOnReject = function(jingleSession, error, mediaType) {
+    if (!jingleSession) {
+        return;
+    }
+    logger.warn(`Source-add rejected on ${jingleSession}, reason="${error?.reason}", message="${error?.msg}"`);
+    const track = this.getLocalTracks(mediaType)[0];
+
+    this.eventEmitter.emit(JitsiConferenceEvents.TRACK_UNMUTE_REJECTED, track);
+};
+
+/**
  * Operations related to creating a new track
  * @param {JitsiLocalTrack} newTrack the new track being created
  */
@@ -1358,6 +1264,75 @@ JitsiConference.prototype._setupNewTrack = function(newTrack) {
     }
 
     this.eventEmitter.emit(JitsiConferenceEvents.TRACK_ADDED, newTrack);
+};
+
+/**
+ * Sets the video type.
+ * @param track
+ * @return <tt>true</tt> if video type was changed in presence.
+ * @private
+ */
+JitsiConference.prototype._setNewVideoType = function(track) {
+    let videoTypeChanged = false;
+
+    if (FeatureFlags.isSourceNameSignalingEnabled() && track) {
+        videoTypeChanged = this._signalingLayer.setTrackVideoType(track.getSourceName(), track.videoType);
+    }
+
+    if (!FeatureFlags.isMultiStreamSupportEnabled()) {
+        const videoTypeTagName = 'videoType';
+
+        // If track is missing we revert to default type Camera, the case where we screenshare and
+        // we return to be video muted.
+        const trackVideoType = track ? track.videoType : VideoType.CAMERA;
+
+        // If video type is camera and there is no videoType in presence, we skip adding it, as this is the default one
+        if (trackVideoType !== VideoType.CAMERA || this.room.getFromPresence(videoTypeTagName)) {
+            // We will not use this.sendCommand here to avoid sending the presence immediately, as later we may also
+            // set the mute status.
+            const legacyTypeChanged = this.room.addOrReplaceInPresence(videoTypeTagName, { value: trackVideoType });
+
+            videoTypeChanged = videoTypeChanged || legacyTypeChanged;
+        }
+    }
+
+    return videoTypeChanged;
+};
+
+/**
+ * Sets mute status.
+ * @param mediaType
+ * @param localTrack
+ * @param isMuted
+ * @param <tt>true</tt> when presence was changed, <tt>false</tt> otherwise.
+ * @private
+ */
+JitsiConference.prototype._setTrackMuteStatus = function(mediaType, localTrack, isMuted) {
+    let presenceChanged = false;
+
+    if (FeatureFlags.isSourceNameSignalingEnabled() && localTrack) {
+        presenceChanged = this._signalingLayer.setTrackMuteStatus(localTrack.getSourceName(), isMuted);
+    }
+
+    // Add the 'audioMuted' and 'videoMuted' tags when source name signaling is enabled for backward compatibility.
+    // It won't be used anymore when multiple stream support is enabled.
+    if (!FeatureFlags.isMultiStreamSupportEnabled()) {
+        let audioMuteChanged, videoMuteChanged;
+
+        if (!this.room) {
+            return false;
+        }
+
+        if (mediaType === MediaType.AUDIO) {
+            audioMuteChanged = this.room.addAudioInfoToPresence(isMuted);
+        } else {
+            videoMuteChanged = this.room.addVideoInfoToPresence(isMuted);
+        }
+
+        presenceChanged = presenceChanged || audioMuteChanged || videoMuteChanged;
+    }
+
+    return presenceChanged;
 };
 
 /**
@@ -3467,6 +3442,58 @@ JitsiConference.prototype._stopP2PSession = function(
             logger.info('Not adding remote JVB tracks - no session yet');
         }
     }
+};
+
+/**
+ * Updates room presence if needed and send the packet in case of a modification.
+ * @param {JingleSessionPC} jingleSession the session firing the event, contains the peer connection which
+ * tracks we will check.
+ * @param {Object|null} ctx a context object we can distinguish multiple calls of the same pass of updating tracks.
+ */
+JitsiConference.prototype._updateRoomPresence = function(jingleSession, ctx) {
+    if (!jingleSession) {
+        return;
+    }
+
+    // skips sending presence twice for the same pass of updating ssrcs
+    if (ctx) {
+        if (ctx.skip) {
+            return;
+        }
+        ctx.skip = true;
+    }
+
+    let presenceChanged = false;
+    let muteStatusChanged, videoTypeChanged;
+    const localTracks = this.getLocalTracks();
+    const localAudioTracks = jingleSession.peerconnection.getLocalTracks(MediaType.AUDIO);
+    const localVideoTracks = jingleSession.peerconnection.getLocalTracks(MediaType.VIDEO);
+
+    // Set presence for all the available local tracks.
+    for (const track of localTracks) {
+        muteStatusChanged = this._setTrackMuteStatus(track.getType(), track, track.isMuted());
+        if (track.getType() === MediaType.VIDEO) {
+            videoTypeChanged = this._setNewVideoType(track);
+        }
+        presenceChanged = muteStatusChanged || videoTypeChanged;
+    }
+
+    // Set the presence in the legacy format if there are no local tracks and multi stream support is not enabled.
+    if (!FeatureFlags.isMultiStreamSupportEnabled()) {
+        let audioMuteStatusChanged, videoMuteStatusChanged;
+
+        if (!localAudioTracks?.length) {
+            audioMuteStatusChanged = this._setTrackMuteStatus(MediaType.AUDIO, undefined, true);
+        }
+        if (!localVideoTracks?.length) {
+            videoMuteStatusChanged = this._setTrackMuteStatus(MediaType.VIDEO, undefined, true);
+            videoTypeChanged = this._setNewVideoType();
+        }
+
+        presenceChanged = presenceChanged || audioMuteStatusChanged || videoMuteStatusChanged || videoTypeChanged;
+    }
+
+    presenceChanged && this.room.sendPresence();
 };
 
 /**

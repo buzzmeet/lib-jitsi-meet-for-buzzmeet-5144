@@ -311,6 +311,8 @@ export const TRACK_MUTE_CHANGED = 'conference.trackMuteChanged';
  */
 export const TRACK_REMOVED = 'conference.trackRemoved';
 
+export const TRACK_UNMUTE_REJECTED = 'conference.trackUnmuteRejected';
+
 /**
  * Notifies for transcription status changes. The event provides the
  * following parameters to its listeners:
