@@ -1,6 +1,7 @@
 /* global $, __filename */
 
 import { getLogger } from 'jitsi-meet-logger';
+import isEqual from 'lodash.isequal';
 import { $iq, $msg, $pres, Strophe } from 'strophe.js';
 
 import * as JitsiTranscriptionStatus from '../../JitsiTranscriptionStatus';
