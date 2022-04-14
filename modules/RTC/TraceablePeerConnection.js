@@ -519,19 +519,20 @@ TraceablePeerConnection.prototype.getConnectionState = function() {
  * @private
  */
 TraceablePeerConnection.prototype._getDesiredMediaDirection = function(
-        mediaType) {
-    let mediaTransferActive = true;
-
-    if (mediaType === MediaType.AUDIO) {
-        mediaTransferActive = this.audioTransferActive;
-    } else if (mediaType === MediaType.VIDEO) {
-        mediaTransferActive = this.videoTransferActive;
+        mediaType, isAddOperation = false) {
+    if (browser.usesUnifiedPlan()) {
+        return isAddOperation
+            ? hasLocalSource ? MediaDirection.SENDRECV : MediaDirection.SENDONLY
+            : hasLocalSource ? MediaDirection.RECVONLY : MediaDirection.INACTIVE;
     }
+
+    const mediaTransferActive = mediaType === MediaType.AUDIO ? this.audioTransferActive : this.videoTransferActive;
+
     if (mediaTransferActive) {
-        return this.hasAnyTracksOfType(mediaType) ? 'sendrecv' : 'recvonly';
+        return hasLocalSource ? MediaDirection.SENDRECV : MediaDirection.RECVONLY;
     }
 
-    return 'inactive';
+    return MediaDirection.INACTIVE;
 };
 
 /**
@@ -2118,7 +2119,7 @@ TraceablePeerConnection.prototype._adjustLocalMediaDirection = function(
         localDescription) {
     const transformer = new SdpTransformWrap(localDescription.sdp);
     let modifiedDirection = false;
-    const audioMedia = transformer.selectMedia('audio');
+    const audioMedia = transformer.selectMedia(MediaType.AUDIO)?.[0];
 
     if (audioMedia) {
         const desiredAudioDirection
