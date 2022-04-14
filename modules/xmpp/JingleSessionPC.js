@@ -2387,6 +2387,27 @@ export default class JingleSessionPC extends JingleSession {
         this._cachedOldLocalSdp = undefined;
         this._cachedNewLocalSdp = undefined;
 
+        const getSignaledSourceInfo = sdpDiffer => {
+            const newMedia = sdpDiffer.getNewMedia();
+            let ssrcs = [];
+            let mediaType = null;
+
+            // It is assumed that sources are signaled one at a time.
+            Object.keys(newMedia).forEach(mediaIndex => {
+                const signaledSsrcs = Object.keys(newMedia[mediaIndex].ssrcs);
+
+                mediaType = newMedia[mediaIndex].mid;
+                if (signaledSsrcs?.length) {
+                    ssrcs = ssrcs.concat(signaledSsrcs);
+                }
+            });
+
+            return {
+                mediaType,
+                ssrcs
+            };
+        };
+
         // send source-remove IQ.
         let sdpDiffer = new SDPDiffer(newSDP, oldSDP);
         const remove = $iq({ to: this.remoteJid,
@@ -2398,15 +2419,27 @@ export default class JingleSessionPC extends JingleSession {
                 sid: this.sid
             }
             );
-        const removedAnySSRCs = sdpDiffer.toJingle(remove);
 
-        if (removedAnySSRCs) {
-            logger.info('Sending source-remove', remove.tree());
+        sdpDiffer.toJingle(remove);
+
+        // context a common object for one run of ssrc update (source-add and source-remove) so we can match them if we
+        // need to
+        const ctx = {};
+        const removedSsrcInfo = getSignaledSourceInfo(sdpDiffer);
+
+        if (removedSsrcInfo.ssrcs.length) {
+            // Log only the SSRCs instead of the full IQ.
+            logger.info(`${this} Sending source-remove for ${removedSsrcInfo.mediaType}`
+                + ` ssrcs=${removedSsrcInfo.ssrcs}`);
             this.connection.sendIQ(
-                remove, null,
-                this.newJingleErrorHandler(remove), IQ_TIMEOUT);
-        } else {
-            logger.log('removal not necessary');
+                remove,
+                () => {
+                    this.room.eventEmitter.emit(XMPPEvents.SOURCE_REMOVE, this, ctx);
+                },
+                this.newJingleErrorHandler(remove, error => {
+                    this.room.eventEmitter.emit(XMPPEvents.SOURCE_REMOVE_ERROR, this, error, ctx);
+                }),
+                IQ_TIMEOUT);
         }
 
         // send source-add IQ.
@@ -2421,14 +2454,21 @@ export default class JingleSessionPC extends JingleSession {
             }
             );
 
-        const containsNewSSRCs = sdpDiffer.toJingle(add);
+        sdpDiffer.toJingle(add);
+        const addedSsrcInfo = getSignaledSourceInfo(sdpDiffer);
 
-        if (containsNewSSRCs) {
-            logger.info('Sending source-add', add.tree());
+        if (addedSsrcInfo.ssrcs.length) {
+            // Log only the SSRCs instead of the full IQ.
+            logger.info(`${this} Sending source-add for ${addedSsrcInfo.mediaType} ssrcs=${addedSsrcInfo.ssrcs}`);
             this.connection.sendIQ(
-                add, null, this.newJingleErrorHandler(add), IQ_TIMEOUT);
-        } else {
-            logger.log('addition not necessary');
+                add,
+                () => {
+                    this.room.eventEmitter.emit(XMPPEvents.SOURCE_ADD, this, ctx);
+                },
+                this.newJingleErrorHandler(add, error => {
+                    this.room.eventEmitter.emit(XMPPEvents.SOURCE_ADD_ERROR, this, error, addedSsrcInfo.mediaType, ctx);
+                }),
+                IQ_TIMEOUT);
         }
     }
 
