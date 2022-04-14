@@ -1962,8 +1962,10 @@ export default class JingleSessionPC extends JingleSession {
                     }
 
                     return promise.then(() => {
-                        if (newTrack?.isVideoTrack()) {
-                            logger.debug(`${this} replaceTrack worker: configuring video stream`);
+                        if (newTrack && newTrack.isVideoTrack()) {
+                            // FIXME set all sender parameters in one go?
+                            // Set the degradation preference on the new video sender.
+                            return this.peerconnection.setSenderVideoDegradationPreference()
 
                                 // Apply the cached video constraints on the new video sender.
                                 .then(() => this.peerconnection.setSenderVideoConstraint())
