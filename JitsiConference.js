@@ -1124,7 +1124,7 @@ JitsiConference.prototype.replaceTrack = function(oldTrack, newTrack) {
         throw new Error(`Replacing a track of videoType=${oldVideoType} with a track of videoType=${newVideoType} is`
             + ' not supported in this mode.');
     }
-    let oldTrackBelongsToConference = this === oldTrack?.conference;
+    const oldTrackBelongsToConference = (this === oldTrack?.conference) ? true : false;
 
     if (oldTrackBelongsToConference && oldTrack?.disposed) {
         return Promise.reject(new JitsiTrackError(JitsiTrackErrors.TRACK_IS_DISPOSED));
