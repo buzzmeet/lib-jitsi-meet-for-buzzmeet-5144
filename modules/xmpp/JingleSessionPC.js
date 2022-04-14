@@ -4,12 +4,15 @@ import { getLogger } from 'jitsi-meet-logger';
 import { $iq, Strophe } from 'strophe.js';
 
 import CodecMimeType from '../../service/RTC/CodecMimeType';
+import { MediaDirection } from '../../service/RTC/MediaDirection';
+import { MediaType } from '../../service/RTC/MediaType';
 import RTCEvents from '../../service/RTC/RTCEvents';
 import {
     ICE_DURATION,
     ICE_STATE_CHANGED
 } from '../../service/statistics/AnalyticsEvents';
 import XMPPEvents from '../../service/xmpp/XMPPEvents';
+import { SS_DEFAULT_FRAME_RATE } from '../RTC/ScreenObtainer';
 import Statistics from '../statistics/statistics';
 import AsyncQueue from '../util/AsyncQueue';
 import GlobalOnErrorHandler from '../util/GlobalOnErrorHandler';
@@ -40,6 +43,18 @@ const IQ_TIMEOUT = 10000;
  */
 const DEFAULT_MAX_STATS = 300;
 
+/**
+ * The time duration for which the client keeps gathering ICE candidates to be sent out in a single IQ.
+ * @type {number} timeout in ms.
+ */
+const ICE_CAND_GATHERING_TIMEOUT = 150;
+
+/**
+ * Reads the endpoint ID given a string which represents either the endpoint's full JID, or the endpoint ID itself.
+ * @param {String} jidOrEndpointId A string which is either the full JID of a participant, or the ID of an
+ * endpoint/participant.
+ * @returns The endpoint ID associated with 'jidOrEndpointId'.
+ */
 function getEndpointId(jidOrEndpointId) {
     return Strophe.getResourceFromJid(jidOrEndpointId) || jidOrEndpointId;
 }
@@ -565,7 +580,7 @@ export default class JingleSessionPC extends JingleSession {
             const state = this.peerconnection.signalingState;
             const remoteDescription = this.peerconnection.remoteDescription;
 
-            if (browser.usesUnifiedPlan() && state === 'stable'
+            if (browser.usesUnifiedPlan() && state === 'stable' && !this.isP2P
                 && remoteDescription && typeof remoteDescription.sdp === 'string') {
                 logger.debug(`onnegotiationneeded fired on ${this.peerconnection} in state: ${state}`);
                 const workFunction = finishedCallback => {
@@ -924,7 +939,16 @@ export default class JingleSessionPC extends JingleSession {
                 // FIXME we may not care about RESULT packet for session-accept
                 // then we should either call 'success' here immediately or
                 // modify sendSessionAccept method to do that
-                this.sendSessionAccept(success, failure);
+                this.sendSessionAccept(() => {
+                    success();
+
+                    this.room.eventEmitter.emit(XMPPEvents.SESSION_ACCEPT, this);
+                },
+                error => {
+                    failure(error);
+
+                    this.room.eventEmitter.emit(XMPPEvents.SESSION_ACCEPT_ERROR, this, error);
+                });
             },
             failure,
             localTracks);
@@ -944,10 +968,20 @@ export default class JingleSessionPC extends JingleSession {
         }
         const workFunction = finishedCallback => {
             const addTracks = [];
+            const audioTracks = localTracks.filter(track => track.getType() === MediaType.AUDIO);
+            const videoTracks = localTracks.filter(track => track.getType() === MediaType.VIDEO);
+            let tracks = localTracks;
 
-            for (const localTrack of localTracks) {
-                addTracks.push(this.peerconnection.addTrack(localTrack, this.isInitiator));
+            // Add only 1 video track at a time. Adding 2 or more video tracks to the peerconnection at the same time
+            // makes the browser go into a renegotiation loop by firing 'negotiationneeded' event after every
+            // renegotiation.
+            if (FeatureFlags.isMultiStreamSupportEnabled() && videoTracks.length > 1) {
+                tracks = [ ...audioTracks, videoTracks[0] ];
             }
+            for (const track of tracks) {
+                addTracks.push(this.peerconnection.addTrack(track, this.isInitiator));
+            }
+            videoTracks.length && videoTracks.splice(0, 1);
 
             Promise.all(addTracks)
                 .then(() => this.peerconnection.createOffer(this.mediaConstraints))
@@ -956,6 +990,13 @@ export default class JingleSessionPC extends JingleSession {
                     // NOTE that the offer is obtained from the localDescription getter as it needs to go though
                     // the transformation chain.
                     this.sendSessionInitiate(this.peerconnection.localDescription.sdp);
+                })
+                .then(() => {
+                    if (videoTracks.length) {
+                        return this.addTracks(videoTracks);
+                    }
+
+                    return Promise.resolve();
                 })
                 .then(() => finishedCallback(), error => finishedCallback(error));
         };
@@ -1018,7 +1059,32 @@ export default class JingleSessionPC extends JingleSession {
         this.setOfferAnswerCycle(
             jingleAnswer,
             () => {
-                logger.info('setAnswer - succeeded');
+                logger.info(`${this} setAnswer - succeeded`);
+                if (browser.usesUnifiedPlan() && browser.isChromiumBased()) {
+                    const workFunction = finishedCallback => {
+                        // This hack is needed for Chrome to create a decoder for the ssrcs in the remote SDP when
+                        // the local endpoint is the offerer and starts muted.
+                        const remoteSdp = this.peerconnection.remoteDescription.sdp;
+                        const remoteDescription = new RTCSessionDescription({
+                            type: 'offer',
+                            sdp: remoteSdp
+                        });
+
+                        return this._responderRenegotiate(remoteDescription)
+                        .then(() => finishedCallback(), error => finishedCallback(error));
+                    };
+
+                    logger.debug(`${this} Queued responderRenegotiate task`);
+                    this.modificationQueue.push(
+                        workFunction,
+                        error => {
+                            if (error) {
+                                logger.error(`${this} failed to renegotiate a decoder for muted endpoint ${error}`);
+                            } else {
+                                logger.debug(`${this} renegotiate a decoder for muted endpoint`);
+                            }
+                        });
+                }
             },
             error => {
                 logger.error('setAnswer failed: ', error);
@@ -1043,15 +1109,22 @@ export default class JingleSessionPC extends JingleSession {
     setOfferAnswerCycle(jingleOfferAnswerIq, success, failure, localTracks = []) {
         const workFunction = finishedCallback => {
             const addTracks = [];
+            const audioTracks = localTracks.filter(track => track.getType() === MediaType.AUDIO);
+            const videoTracks = localTracks.filter(track => track.getType() === MediaType.VIDEO);
+            let tracks = localTracks;
 
-            for (const track of localTracks) {
+            // Add only 1 video track at a time. Adding 2 or more video tracks to the peerconnection at the same time
+            // makes the browser go into a renegotiation loop by firing 'negotiationneeded' event after every
+            // renegotiation.
+            if (FeatureFlags.isMultiStreamSupportEnabled() && videoTracks.length > 1) {
+                tracks = [ ...audioTracks, videoTracks[0] ];
+            }
+            for (const track of tracks) {
                 addTracks.push(this.peerconnection.addTrack(track, this.isInitiator));
             }
-
-            const newRemoteSdp
-                = this._processNewJingleOfferIq(jingleOfferAnswerIq);
-            const oldLocalSdp
-                = this.peerconnection.localDescription.sdp;
+            videoTracks.length && videoTracks.splice(0, 1);
+            const newRemoteSdp = this._processNewJingleOfferIq(jingleOfferAnswerIq);
+            const oldLocalSdp = this.peerconnection.localDescription.sdp;
 
             const bridgeSession
                 = $(jingleOfferAnswerIq)
@@ -1065,6 +1138,13 @@ export default class JingleSessionPC extends JingleSession {
 
             Promise.all(addTracks)
                 .then(() => this._renegotiate(newRemoteSdp.raw))
+                .then(() => {
+                    if (videoTracks.length) {
+                        return this.addTracks(videoTracks);
+                    }
+
+                    return Promise.resolve();
+                })
                 .then(() => {
                     if (this.state === JingleSessionState.PENDING) {
                         this.state = JingleSessionState.ACTIVE;
@@ -1121,6 +1201,14 @@ export default class JingleSessionPC extends JingleSession {
      * @param failure function(error) called when we fail to accept new offer.
      */
     replaceTransport(jingleOfferElem, success, failure) {
+        if (this.options.enableForcedReload) {
+            const sdp = new SDP(this.peerconnection.localDescription.sdp);
+
+            this.sendTransportAccept(sdp, success, failure);
+            this.room.eventEmitter.emit(XMPPEvents.CONNECTION_RESTARTED, this);
+
+            return;
+        }
         this.room.eventEmitter.emit(XMPPEvents.ICE_RESTARTING, this);
 
         // We need to first reject the 'data' section to have the SCTP stack
@@ -1590,6 +1678,8 @@ export default class JingleSessionPC extends JingleSession {
                 });
             });
 
+            let midFound = false;
+
             /* eslint-enable no-invalid-this */
             currentRemoteSdp.media.forEach((media, i2) => {
                 if (!SDPUtil.findLine(media, `a=mid:${name}`)) {
@@ -1599,7 +1689,14 @@ export default class JingleSessionPC extends JingleSession {
                     addSsrcInfo[i2] = '';
                 }
                 addSsrcInfo[i2] += lines;
+                midFound = true;
             });
+
+            // In p2p unified mode with multi-stream enabled, the new sources will have content name that doesn't exist
+            // in the current remote description. Add a new m-line for this newly signaled source.
+            if (!midFound && this.isP2P && FeatureFlags.isSourceNameSignalingEnabled()) {
+                addSsrcInfo[name] = lines;
+            }
         });
 
         return addSsrcInfo;
@@ -1704,10 +1801,21 @@ export default class JingleSessionPC extends JingleSession {
                     ? this._processRemoteAddSource(addOrRemoveSsrcInfo)
                     : this._processRemoteRemoveSource(addOrRemoveSsrcInfo);
 
-            this._renegotiate(newRemoteSdp.raw)
-                .then(() => {
-                    const newLocalSdp
-                        = new SDP(this.peerconnection.localDescription.sdp);
+            // Add a workaround for a bug in Chrome (unified plan) for p2p connection. When the media direction on
+            // the transceiver goes from "inactive" (both users join muted) to "recvonly" (peer unmutes), the browser
+            // doesn't seem to create a decoder if the signaling state changes from "have-local-offer" to "stable".
+            // Therefore, initiate a responder renegotiate even if the endpoint is the offerer to workaround this issue.
+            // TODO - open a chrome bug and update the comments.
+            const remoteDescription = new RTCSessionDescription({
+                type: 'offer',
+                sdp: newRemoteSdp.raw
+            });
+            const promise = isAdd && browser.usesUnifiedPlan() && this.isP2P && browser.isChromiumBased()
+                ? this._responderRenegotiate(remoteDescription)
+                : this._renegotiate(newRemoteSdp.raw);
+
+            promise.then(() => {
+                const newLocalSdp = new SDP(this.peerconnection.localDescription.sdp);
 
                     logger.log(
                         `${logPrefix} - OK, SDPs: `, oldLocalSdp, newLocalSdp);
@@ -1755,34 +1863,49 @@ export default class JingleSessionPC extends JingleSession {
      *  in removeSsrcInfo
      */
     _processRemoteRemoveSource(removeSsrcInfo) {
-        const remoteSdp = browser.usesPlanB()
-            ? new SDP(this.peerconnection.remoteDescription.sdp)
-            : new SDP(this.peerconnection.peerconnection.remoteDescription.sdp);
+        const remoteSdp = this.usesUnifiedPlan
+            ? new SDP(this.peerconnection.peerconnection.remoteDescription.sdp)
+            : new SDP(this.peerconnection.remoteDescription.sdp);
 
         removeSsrcInfo.forEach((lines, idx) => {
             // eslint-disable-next-line no-param-reassign
             lines = lines.split('\r\n');
             lines.pop(); // remove empty last element;
-            if (browser.usesPlanB()) {
+            if (browser.usesUnifiedPlan()) {
+                let mid;
+
                 lines.forEach(line => {
-                    remoteSdp.media[idx]
-                        = remoteSdp.media[idx].replace(`${line}\r\n`, '');
-                });
-            } else {
-                lines.forEach(line => {
-                    const mid = remoteSdp.media.findIndex(mLine => mLine.includes(line));
+                    mid = remoteSdp.media.findIndex(mLine => mLine.includes(line));
 
                     if (mid > -1) {
                         remoteSdp.media[mid] = remoteSdp.media[mid].replace(`${line}\r\n`, '');
+                        if (this.isP2P) {
+                            const mediaType = SDPUtil.parseMLine(remoteSdp.media[mid].split('\r\n')[0])?.media;
+                            const desiredDirection = this.peerconnection.getDesiredMediaDirection(mediaType, false);
 
-                        // Change the direction to "inactive" only on Firefox. Audio fails on
-                        // Safari (possibly Chrome in unified plan mode) when we try to re-use inactive
-                        // m-lines due to a webkit bug.
-                        // https://bugs.webkit.org/show_bug.cgi?id=211181
-                        if (browser.isFirefox()) {
-                            remoteSdp.media[mid] = remoteSdp.media[mid].replace('a=sendonly', 'a=inactive');
+                            [ MediaDirection.SENDRECV, MediaDirection.SENDONLY ].forEach(direction => {
+                                remoteSdp.media[mid] = remoteSdp.media[mid]
+                                    .replace(`a=${direction}`, `a=${desiredDirection}`);
+                            });
+                        } else {
+                            // Jvb connections will have direction set to 'sendonly' for the remote sources.
+                            remoteSdp.media[mid] = remoteSdp.media[mid]
+                                .replace(`a=${MediaDirection.SENDONLY}`, `a=${MediaDirection.INACTIVE}`);
                         }
                     }
+                });
+
+                // Reject the m-line so that the browser removes the associated transceiver from the list of available
+                // transceivers. This will prevent the client from trying to re-use these inactive transceivers when
+                // additional video sources are added to the peerconnection.
+                if (mid > -1 && !this.isP2P && FeatureFlags.isMultiStreamSupportEnabled()) {
+                    const { media, port } = SDPUtil.parseMLine(remoteSdp.media[mid].split('\r\n')[0]);
+
+                    remoteSdp.media[mid] = remoteSdp.media[mid].replace(`m=${media} ${port}`, `m=${media} 0`);
+                }
+            } else {
+                lines.forEach(line => {
+                    remoteSdp.media[idx] = remoteSdp.media[idx].replace(`${line}\r\n`, '');
                 });
             }
         });
@@ -1799,10 +1922,31 @@ export default class JingleSessionPC extends JingleSession {
      *  in removeSsrcInfo
      */
     _processRemoteAddSource(addSsrcInfo) {
-        const remoteSdp = new SDP(this.peerconnection.remoteDescription.sdp);
+        let remoteSdp = new SDP(this.peerconnection.remoteDescription.sdp);
 
+        // Add a new m-line in the remote description if the source info for a secondary video source is recceived from
+        // the remote p2p peer when multi-stream support is enabled.
+        if (addSsrcInfo.length > remoteSdp.media.length
+            && FeatureFlags.isSourceNameSignalingEnabled()
+            && this.isP2P
+            && browser.usesUnifiedPlan()) {
+            remoteSdp.addMlineForNewLocalSource(MediaType.VIDEO);
+            remoteSdp = new SDP(remoteSdp.raw);
+        }
         addSsrcInfo.forEach((lines, idx) => {
             remoteSdp.media[idx] += lines;
+
+            // Make sure to change the direction to 'sendrecv/sendonly' only for p2p connections. For jvb connections,
+            // a new m-line is added for the new remote sources.
+            if (this.isP2P && browser.usesUnifiedPlan()) {
+                const mediaType = SDPUtil.parseMLine(remoteSdp.media[idx].split('\r\n')[0])?.media;
+                const desiredDirection = this.peerconnection.getDesiredMediaDirection(mediaType, true);
+
+                [ MediaDirection.RECVONLY, MediaDirection.INACTIVE ].forEach(direction => {
+                    remoteSdp.media[idx] = remoteSdp.media[idx]
+                        .replace(`a=${direction}`, `a=${desiredDirection}`);
+                });
+            }
         });
         remoteSdp.raw = remoteSdp.session + remoteSdp.media.join('');
 
@@ -1894,6 +2038,77 @@ export default class JingleSessionPC extends JingleSession {
                         return this.peerconnection.setRemoteDescription(remoteDescription);
                     });
             });
+    }
+
+    /**
+     * Adds a new track to the peerconnection. This method needs to be called only when a secondary JitsiLocalTrack is
+     * being added to the peerconnection for the first time.
+     *
+     * @param {Array<JitsiLocalTrack>} localTracks - Tracks to be added to the peer connection.
+     * @returns {Promise<void>} that resolves when the track is successfully added to the peerconnection, rejected
+     * otherwise.
+     */
+    addTracks(localTracks = null) {
+        if (!FeatureFlags.isMultiStreamSupportEnabled()
+            || !localTracks?.length
+            || localTracks.find(track => track.getType() !== MediaType.VIDEO)) {
+            return Promise.reject(new Error('Multiple tracks of the given media type are not supported'));
+        }
+
+        const replaceTracks = [];
+        const workFunction = finishedCallback => {
+            const oldLocalSDP = new SDP(this.peerconnection.localDescription.sdp);
+            const remoteSdp = new SDP(this.peerconnection.peerconnection.remoteDescription.sdp);
+
+            // Add transceivers by adding a new mline in the remote description for each track.
+            for (const track of localTracks) {
+                remoteSdp.addMlineForNewLocalSource(track.getType());
+            }
+
+            const remoteDescription = new RTCSessionDescription({
+                type: 'offer',
+                sdp: remoteSdp.raw
+            });
+
+            // Always initiate a responder renegotiate since the new m-line is added to remote SDP.
+            this._responderRenegotiate(remoteDescription)
+                .then(() => {
+                    // Replace the tracks on the newly generated transceivers.
+                    for (const track of localTracks) {
+                        replaceTracks.push(this.peerconnection.replaceTrack(null, track));
+                    }
+
+                    return Promise.all(replaceTracks);
+                })
+
+                // Trigger a renegotiation here since renegotiations are suppressed at TPC.replaceTrack for screenshare
+                // tracks. This is done here so that presence for screenshare tracks is sent before signaling.
+                .then(() => this._renegotiate())
+                .then(() => {
+                    const newLocalSDP = new SDP(this.peerconnection.localDescription.sdp);
+
+                    // Signal the new sources to the peer.
+                    this.notifyMySSRCUpdate(oldLocalSDP, newLocalSDP);
+                    finishedCallback();
+                })
+                .catch(error => finishedCallback(error));
+        };
+
+        return new Promise((resolve, reject) => {
+            logger.debug(`${this} Queued renegotiation after addTrack`);
+
+            this.modificationQueue.push(
+                workFunction,
+                error => {
+                    if (error) {
+                        logger.error(`${this} renegotiation after addTrack error`, error);
+                        reject(error);
+                    } else {
+                        logger.debug(`${this} renegotiation after addTrack executed - OK`);
+                        resolve();
+                    }
+                });
+        });
     }
 
     /**
@@ -2172,11 +2387,13 @@ export default class JingleSessionPC extends JingleSession {
                     if (shouldRenegotiate && oldLocalSDP && tpc.remoteDescription.sdp) {
                         this._renegotiate()
                             .then(() => {
-                                // The results are ignored, as this check failure is not
-                                // enough to fail the whole operation. It will log
-                                // an error inside.
-                                this._verifyNoSSRCChanged(
-                                    operationName, new SDP(oldLocalSDP));
+                                // The results are ignored, as this check failure is not enough to fail the whole
+                                // operation. It will log an error inside for plan-b.
+                                !browser.usesUnifiedPlan() && this._verifyNoSSRCChanged(operationName, new SDP(oldLocalSDP));
+                                const newLocalSdp = tpc.localDescription.sdp;
+
+                                // Signal the ssrc if an unmute operation results in a new ssrc being generated.
+                                this.notifyMySSRCUpdate(new SDP(oldLocalSDP), new SDP(newLocalSdp));
                                 finishedCallback();
                             });
                     } else {
