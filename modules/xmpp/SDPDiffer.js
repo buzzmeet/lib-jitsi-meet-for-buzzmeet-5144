@@ -55,11 +55,13 @@ export default function SDPDiffer(mySDP, otherSDP) {
  * Returns map of MediaChannel that contains media contained in
  * 'mySDP', but not contained in 'otherSdp'. Mapped by channel idx.
  */
-SDPDiffer.prototype.getNewMedia = function() {
+SDPDiffer.prototype.getNewMedia = function(isScreenShare = false) {
 
     const myMedias = this.mySDP.getMediaSsrcMap();
     const othersMedias = this.otherSDP.getMediaSsrcMap();
     const newMedia = {};
+
+    if (isScreenShare) return othersMedias;
 
     Object.keys(othersMedias).forEach(othersMediaIdx => {
         const myMedia = myMedias[othersMediaIdx];

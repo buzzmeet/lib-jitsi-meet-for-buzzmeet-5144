@@ -2396,7 +2396,7 @@ export default class JingleSessionPC extends JingleSession {
         this._cachedNewLocalSdp = undefined;
 
         const getSignaledSourceInfo = sdpDiffer => {
-            const newMedia = sdpDiffer.getNewMedia();
+            const newMedia = sdpDiffer.getNewMedia(isScreenShare);
             let ssrcs = [];
             let mediaType = null;
 
@@ -2409,10 +2409,6 @@ export default class JingleSessionPC extends JingleSession {
                     ssrcs = ssrcs.concat(signaledSsrcs);
                 }
             });
-
-            if (isScreenShare) {
-                return newSDP;
-            }
 
             return {
                 mediaType,
