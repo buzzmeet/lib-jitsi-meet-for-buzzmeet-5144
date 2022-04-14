@@ -2369,9 +2369,7 @@ export default class JingleSessionPC extends JingleSession {
         // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.14
         let isScreenShare = false;
         const localTracks = this.peerconnection.localTracks;
-        Object.keys(localTracks).forEach(key => {
-            const localTrack = localTracks.get(key);
-
+        localTracks.forEach(localTrack => {
             if ("video" === localTrack.type && "desktop" === localTrack.videoType) {
                 isScreenShare = true;
             }
