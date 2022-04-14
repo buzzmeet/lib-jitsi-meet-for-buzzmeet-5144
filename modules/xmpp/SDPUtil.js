@@ -277,6 +277,18 @@ const SDPUtil = {
 
         return data;
     },
+    /**
+     * Gets the source name out of the name attribute "a=ssrc:254321 name:name1".
+     *
+     * @param {string[]} ssrcLines
+     * @returns {string | undefined}
+     */
+     parseSourceNameLine(ssrcLines) {
+        const sourceNameLine = ssrcLines.find(ssrcSdpLine => ssrcSdpLine.indexOf(' name:') > 0);
+
+        // Everything past the "name:" part
+        return sourceNameLine?.substring(sourceNameLine.indexOf(' name:') + 6);
+    },
     parseRTCPFB(line) {
         const parts = line.substr(10).split(' ');
         const data = {};
