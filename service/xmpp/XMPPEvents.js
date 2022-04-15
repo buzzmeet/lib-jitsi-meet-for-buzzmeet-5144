@@ -7,6 +7,7 @@ const XMPPEvents = {
     // Designates an event indicating that the focus has asked us to mute our
     // audio.
     AUDIO_MUTED_BY_FOCUS: 'xmpp.audio_muted_by_focus',
+    VIDEO_MUTED_BY_FOCUS : 'xmpp.video_muted_by_focus',
     AUTHENTICATION_REQUIRED: 'xmpp.authentication_required',
     BRIDGE_DOWN: 'xmpp.bridge_down',
 
@@ -219,6 +220,8 @@ const XMPPEvents = {
     SENDING_PRIVATE_CHAT_MESSAGE: 'xmpp.sending_private_chat_message',
 
     /**
+    SESSION_ACCEPT = 'xmpp.session_accept',
+    SESSION_ACCEPT_ERROR = 'xmpp.session_accept_error',
      * Event fired when we do not get our 'session-accept' acknowledged by
      * Jicofo. It most likely means that there is serious problem with our
      * connection or XMPP server and we should reload the conference.
@@ -229,6 +232,26 @@ const XMPPEvents = {
      * packets means that most likely it has never seen our IQ.
      */
     SESSION_ACCEPT_TIMEOUT: 'xmpp.session_accept_timeout',
+
+    /**
+     * Event fired after successful sending of jingle source-add.
+     */
+    SOURCE_ADD : 'xmpp.source_add',
+
+    /**
+     * Event fired after receiving an error sending of jingle source-add.
+     */
+    SOURCE_ADD_ERROR : 'xmpp.source_add_error',
+
+    /**
+     * Event fired after successful sending of jingle source-remove.
+     */
+    SOURCE_REMOVE : 'xmpp.source_remove',
+
+    /**
+     * Event fired after receiving an error sending of jingle source-remove.
+     */
+    SOURCE_REMOVE_ERROR : 'xmpp.source_remove_error',
 
     /**
      * Event fired when speaker stats update message is received.
