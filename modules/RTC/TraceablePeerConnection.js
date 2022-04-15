@@ -1120,7 +1120,7 @@ TraceablePeerConnection.prototype.removeRemoteTracks = function(owner) {
  * @param {JitsiRemoteTrack} toBeRemoved
  */
 TraceablePeerConnection.prototype._removeRemoteTrack = function(toBeRemoved) {
-    toBeRemoved.dispose();
+    toBeRemoved.dispose && toBeRemoved.dispose();
     const participantId = toBeRemoved.getParticipantId();
     const remoteTracksMap = this.remoteTracks.get(participantId);
 
