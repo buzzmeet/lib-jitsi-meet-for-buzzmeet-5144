@@ -4,6 +4,8 @@ import { getLogger } from 'jitsi-meet-logger';
 import { $iq, Strophe } from 'strophe.js';
 
 import CodecMimeType from '../../service/RTC/CodecMimeType';
+import { MediaDirection } from '../../service/RTC/MediaDirection';
+import { MediaType } from '../../service/RTC/MediaType';
 import RTCEvents from '../../service/RTC/RTCEvents';
 import {
     ICE_DURATION,
