@@ -1258,7 +1258,7 @@ function extractSSRCMap(desc) {
             // the standard and the unified plan SDPs do not have a proper msid attribute for the sources.
             // Also the ssrcs for sources do not change for Unified plan clients since RTCRtpSender#replaceTrack is
             // used for switching the tracks so it is safe to use the mediaType as the key for the TrackSSRCInfo map.
-            const key = this._usesUnifiedPlan ? mLine.type : ssrc.value;
+            const key = browser.usesUnifiedPlan() ? mLine.type : ssrc.value;
             const ssrcNumber = ssrc.id;
             let ssrcInfo = ssrcMap.get(key);
 
