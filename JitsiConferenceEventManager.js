@@ -76,6 +76,15 @@ JitsiConferenceEventManager.prototype.setupChatRoomListeners = function() {
         // else: there are no DataChannels in P2P session (at least for now)
     });
 
+    chatRoom.addListener(XMPPEvents.PARTICIPANT_FEATURES_CHANGED, (from, features) => {
+        const participant = conference.getParticipantById(Strophe.getResourceFromJid(from));
+
+        if (participant) {
+            participant.setFeatures(features);
+            conference.eventEmitter.emit(JitsiConferenceEvents.PARTCIPANT_FEATURES_CHANGED, participant);
+        }
+    });
+
     chatRoom.addListener(
         XMPPEvents.ICE_RESTART_SUCCESS,
         (jingleSession, offerIq) => {
@@ -698,7 +707,7 @@ JitsiConferenceEventManager.prototype.setupStatisticsListeners = function() {
                     return;
                 }
 
-                track._onByteSentStatsReceived(tpc, stats[ssrc]);
+                track.onByteSentStatsReceived(tpc, stats[ssrc]);
             });
         });
     }
