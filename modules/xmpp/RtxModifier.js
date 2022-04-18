@@ -1,5 +1,6 @@
 /* global __filename */
-
+import { MediaDirection } from '../../service/RTC/MediaDirection';
+import { MediaType } from '../../service/RTC/MediaType';
 import { getLogger } from 'jitsi-meet-logger';
 
 import SDPUtil from './SDPUtil';
@@ -113,17 +114,23 @@ export default class RtxModifier {
      * @param {string} sdpStr sdp in raw string format
      */
     modifyRtxSsrcs(sdpStr) {
+        let modified = false;
         const sdpTransformer = new SdpTransformWrap(sdpStr);
-        const videoMLine = sdpTransformer.selectMedia('video');
+        const videoMLines = sdpTransformer.selectMedia(MediaType.VIDEO);
 
-        if (!videoMLine) {
+        if (!videoMLines?.length) {
             logger.debug(`No 'video' media found in the sdp: ${sdpStr}`);
 
             return sdpStr;
         }
 
-        return this.modifyRtxSsrcs2(videoMLine)
-            ? sdpTransformer.toRawSDP() : sdpStr;
+        for (const videoMLine of videoMLines) {
+            if (this.modifyRtxSsrcs2(videoMLine)) {
+                modified = true;
+            }
+        }
+
+        return modified ? sdpTransformer.toRawSDP() : sdpStr;
     }
 
     /**
@@ -154,14 +161,7 @@ export default class RtxModifier {
             const cname = videoMLine.getSSRCAttrValue(ssrc, 'cname');
             let correspondingRtxSsrc = this.correspondingRtxSsrcs.get(ssrc);
 
-            if (correspondingRtxSsrc) {
-                logger.debug(
-                    'Already have an associated rtx ssrc for'
-                    + `video ssrc ${ssrc}: ${correspondingRtxSsrc}`);
-            } else {
-                logger.debug(
-                    `No previously associated rtx ssrc for video ssrc ${ssrc}`);
-
+            if (!correspondingRtxSsrc) {
                 // If there's one in the sdp already for it, we'll just set
                 //  that as the corresponding one
                 const previousAssociatedRtxStream = videoMLine.getRtxSSRC(ssrc);
@@ -203,30 +203,19 @@ export default class RtxModifier {
      */
     stripRtx(sdpStr) {
         const sdpTransformer = new SdpTransformWrap(sdpStr);
-        const videoMLine = sdpTransformer.selectMedia('video');
+        const videoMLines = sdpTransformer.selectMedia(MediaType.VIDEO);
 
-        if (!videoMLine) {
+        if (!videoMLines?.length) {
             logger.debug(`No 'video' media found in the sdp: ${sdpStr}`);
 
             return sdpStr;
         }
-        if (videoMLine.direction === 'recvonly') {
-            logger.debug('RtxModifier doing nothing, video m line is recvonly');
 
-            return sdpStr;
-        }
-        if (videoMLine.getSSRCCount() < 1) {
-            logger.debug('RtxModifier doing nothing, no video ssrcs present');
-
-            return sdpStr;
-        }
-        if (!videoMLine.containsAnySSRCGroups()) {
-            logger.debug('RtxModifier doing nothing, '
-              + 'no video ssrcGroups present');
-
-            return sdpStr;
-        }
-        const fidGroups = videoMLine.findGroups('FID');
+        for (const videoMLine of videoMLines) {
+            if (videoMLine.direction !== MediaDirection.RECVONLY
+                && videoMLine.getSSRCCount()
+                && videoMLine.containsAnySSRCGroups()) {
+                const fidGroups = videoMLine.findGroups('FID');
 
         // Remove the fid groups from the mline
 
@@ -236,7 +225,9 @@ export default class RtxModifier {
         for (const fidGroup of fidGroups) {
             const rtxSsrc = parseSecondarySSRC(fidGroup);
 
-            videoMLine.removeSSRC(rtxSsrc);
+                    videoMLine.removeSSRC(rtxSsrc);
+                }
+            }
         }
 
         return sdpTransformer.toRawSDP();
