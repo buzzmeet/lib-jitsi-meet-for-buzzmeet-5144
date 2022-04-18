@@ -1414,7 +1414,7 @@ const enforceSendRecv = function(localDescription, options) {
     }
 
     const transformer = new SdpTransformWrap(localDescription.sdp);
-    const audioMedia = transformer.selectMedia('audio')?.[0];
+    const audioMedia = transformer.selectMedia('audio');
     let changed = false;
 
     if (audioMedia && audioMedia.direction !== 'sendrecv') {
@@ -1427,7 +1427,7 @@ const enforceSendRecv = function(localDescription, options) {
         changed = true;
     }
 
-    const videoMedia = transformer.selectMedia('video')?.[0];
+    const videoMedia = transformer.selectMedia('video');
 
     if (videoMedia && videoMedia.direction !== 'sendrecv') {
         videoMedia.direction = 'sendrecv';
