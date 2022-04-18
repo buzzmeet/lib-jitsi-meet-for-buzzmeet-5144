@@ -529,6 +529,10 @@ export default class ChatRoom extends Listenable {
             case 'identity':
                 member.identity = extractIdentityInformation(node);
                 break;
+            case 'features': {
+                member.features = this._extractFeatures(node);
+                break;
+            }
             case 'stat': {
                 const { attributes } = node;
 
@@ -604,7 +608,8 @@ export default class ChatRoom extends Listenable {
                     member.status,
                     member.identity,
                     member.botType,
-                    member.jid);
+                    member.jid,
+                    member.features);
 
                 // we are reporting the status with the join
                 // so we do not want a second event about status update
@@ -664,6 +669,11 @@ export default class ChatRoom extends Listenable {
             if (memberOfThis.version !== member.version) {
                 hasVersionUpdate = true;
                 memberOfThis.version = member.version;
+            }
+
+            if (!isEqual(memberOfThis.features, member.features)) {
+                memberOfThis.features = member.features;
+                this.eventEmitter.emit(XMPPEvents.PARTICIPANT_FEATURES_CHANGED, from, member.features);
             }
         }
 
@@ -755,6 +765,26 @@ export default class ChatRoom extends Listenable {
         if (hasVersionUpdate) {
             logger.info(`Received version for ${jid}: ${member.version}`);
         }
+    }
+
+    /**
+     * Extracts the features from the presence.
+     * @param node the node to process.
+     * @return features the Set of features where extracted data is added.
+     * @private
+     */
+    _extractFeatures(node) {
+        const features = new Set();
+
+        for (let j = 0; j < node.children.length; j++) {
+            const { attributes } = node.children[j];
+
+            if (attributes && attributes.var) {
+                features.add(attributes.var);
+            }
+        }
+
+        return features;
     }
 
     /**
@@ -1151,6 +1181,14 @@ export default class ChatRoom extends Listenable {
 
             if (lobbyRoomNode.length) {
                 lobbyRoomJid = lobbyRoomNode.text();
+            } else {
+                // let's fallback to old location of lobbyroom node, TODO: to be removed in the future once
+                // everything is updated
+                const lobbyRoomOldNode = $(pres).find('>lobbyroom');
+
+                if (lobbyRoomOldNode.length) {
+                    lobbyRoomJid = lobbyRoomOldNode.text();
+                }
             }
 
             this.eventEmitter.emit(XMPPEvents.ROOM_CONNECT_MEMBERS_ONLY_ERROR, lobbyRoomJid);
@@ -1523,7 +1561,7 @@ export default class ChatRoom extends Listenable {
      * @param mute
      */
     addAudioInfoToPresence(mute) {
-        this.addToPresence(
+        this.addOrReplaceInPresence(
             'audiomuted',
             {
                 attributes: { 'xmlns': 'http://jitsi.org/jitmeet/audio' },
@@ -1551,7 +1589,7 @@ export default class ChatRoom extends Listenable {
      * @param mute
      */
     addVideoInfoToPresence(mute) {
-        this.addToPresence(
+        this.addOrReplaceInPresence(
             'videomuted',
             {
                 attributes: { 'xmlns': 'http://jitsi.org/jitmeet/video' },
@@ -1589,7 +1627,7 @@ export default class ChatRoom extends Listenable {
         }
         const data = {
             muted: false, // unmuted by default
-            videoType: undefined // no video type by default
+            videoType: mediaType === MediaType.VIDEO ? VideoType.CAMERA : undefined // 'camera' by default
         };
         let mutedNode = null;
 
