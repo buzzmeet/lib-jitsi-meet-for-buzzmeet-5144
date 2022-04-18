@@ -421,7 +421,7 @@ export class SdpTransformWrap {
             .filter(mLine => mLine.type === mediaType)
             .map(mLine => new MLineWrap(mLine));
 
-        return selectedMLine ? selectedMLine : null;
+        return selectedMLines ? selectedMLines : null;
     }
 
     /**
