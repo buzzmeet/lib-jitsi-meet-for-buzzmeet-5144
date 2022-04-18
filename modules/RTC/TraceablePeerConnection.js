@@ -1245,25 +1245,31 @@ function extractSSRCMap(desc) {
                 }
             }
         }
-        for (const ssrc of mLine.ssrcs) {
-            if (ssrc.attribute !== 'msid') {
-                continue; // eslint-disable-line no-continue
-            }
 
-            const msid = ssrc.value;
-            let ssrcInfo = ssrcMap.get(msid);
+        let ssrcs = mLine.ssrcs;
+
+        // Filter the ssrcs with 'msid' attribute for plan-b clients and 'cname' for unified-plan clients.
+        ssrcs = browser.usesUnifiedPlan()
+            ? ssrcs.filter(s => s.attribute === 'cname')
+            : ssrcs.filter(s => s.attribute === 'msid');
+
+        for (const ssrc of ssrcs) {
+            // Use the mediaType as key for the source map for unified plan clients since msids are not part of
+            // the standard and the unified plan SDPs do not have a proper msid attribute for the sources.
+            // Also the ssrcs for sources do not change for Unified plan clients since RTCRtpSender#replaceTrack is
+            // used for switching the tracks so it is safe to use the mediaType as the key for the TrackSSRCInfo map.
+            const key = this._usesUnifiedPlan ? mLine.type : ssrc.value;
+            const ssrcNumber = ssrc.id;
+            let ssrcInfo = ssrcMap.get(key);
 
             if (!ssrcInfo) {
                 ssrcInfo = {
                     ssrcs: [],
                     groups: [],
-                    msid
+                    msid: key
                 };
-                ssrcMap.set(msid, ssrcInfo);
+                ssrcMap.set(key, ssrcInfo);
             }
-
-            const ssrcNumber = ssrc.id;
-
             ssrcInfo.ssrcs.push(ssrcNumber);
 
             if (groupsMap.has(ssrcNumber)) {
@@ -1408,7 +1414,7 @@ const enforceSendRecv = function(localDescription, options) {
     }
 
     const transformer = new SdpTransformWrap(localDescription.sdp);
-    const audioMedia = transformer.selectMedia('audio');
+    const audioMedia = transformer.selectMedia('audio')?.[0];
     let changed = false;
 
     if (audioMedia && audioMedia.direction !== 'sendrecv') {
@@ -1421,7 +1427,7 @@ const enforceSendRecv = function(localDescription, options) {
         changed = true;
     }
 
-    const videoMedia = transformer.selectMedia('video');
+    const videoMedia = transformer.selectMedia('video')?.[0];
 
     if (videoMedia && videoMedia.direction !== 'sendrecv') {
         videoMedia.direction = 'sendrecv';
