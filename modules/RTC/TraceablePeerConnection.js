@@ -3117,7 +3117,7 @@ TraceablePeerConnection.prototype._extractPrimarySSRC = function(ssrcObj) {
  */
 TraceablePeerConnection.prototype._processLocalSSRCsMap = function(ssrcMap) {
     for (const track of this.localTracks.values()) {
-        const sourceIdentifier = this._usesUnifiedPlan ? track.getType() : track.storedMSID;
+        const sourceIdentifier = browser.usesUnifiedPlan() ? track.getType() : track.storedMSID;
 
         if (ssrcMap.has(sourceIdentifier)) {
             const newSSRC = ssrcMap.get(sourceIdentifier);
