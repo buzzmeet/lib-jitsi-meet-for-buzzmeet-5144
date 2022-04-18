@@ -6,6 +6,7 @@ import { $iq, $msg, $pres, Strophe } from 'strophe.js';
 
 import * as JitsiTranscriptionStatus from '../../JitsiTranscriptionStatus';
 import * as MediaType from '../../service/RTC/MediaType';
+import { VideoType } from '../../service/RTC/VideoType';
 import XMPPEvents from '../../service/xmpp/XMPPEvents';
 import GlobalOnErrorHandler from '../util/GlobalOnErrorHandler';
 import Listenable from '../util/Listenable';
@@ -593,7 +594,7 @@ export default class ChatRoom extends Listenable {
             hasStatusUpdate = member.status !== undefined;
             hasVersionUpdate = member.version !== undefined;
             if (member.isFocus) {
-                this._initFocus(from, jid);
+                this._initFocus(from, member.features);
             } else {
                 // identity is being added to member joined, so external
                 // services can be notified for that (currently identity is
@@ -652,7 +653,7 @@ export default class ChatRoom extends Listenable {
                 // presence from the focus won't contain
                 // <item jid="focus..." />.
                 memberOfThis.isFocus = true;
-                this._initFocus(from, jid);
+                this._initFocus(from, member.features);
             }
 
             // store the new display name
@@ -792,16 +793,9 @@ export default class ChatRoom extends Listenable {
      * @param from jid of the focus
      * @param mucJid the jid of the focus in the muc
      */
-    _initFocus(from, mucJid) {
+    _initFocus(from, features) {
         this.focusMucJid = from;
-
-        logger.info(`Ignore focus: ${from}, real JID: ${mucJid}`);
-        this.xmpp.caps.getFeatures(mucJid, 15000).then(features => {
-            this.focusFeatures = features;
-            logger.info(`Jicofo supports restart by terminate: ${this.supportsRestartByTerminate()}`);
-        }, error => {
-            logger.error('Failed to discover Jicofo features', error && error.message);
-        });
+        this.focusFeatures = features;
     }
 
     /**
