@@ -201,6 +201,13 @@ export default function TraceablePeerConnection(
     this.remoteUfrag = null;
 
     /**
+     * The DTLS transport object for the PeerConnection.
+     * Note: this assume only one shared transport exists because we bundled
+     *       all streams on the same underlying transport.
+     */
+    this._dtlsTransport = null;
+
+    /**
      * The signaling layer which operates this peer connection.
      * @type {SignalingLayer}
      */
@@ -2219,6 +2226,29 @@ TraceablePeerConnection.prototype._adjustLocalMediaDirection = function(
         sdp: transformer.toRawSDP()
     });
 }
+/**
+ * Sets up the _dtlsTransport object and initializes callbacks for it.
+ */
+TraceablePeerConnection.prototype._initializeDtlsTransport = function() {
+    // We are assuming here that we only have one bundled transport here
+    if (!this.peerconnection.getSenders || this._dtlsTransport) {
+        return;
+    }
+
+    const senders = this.peerconnection.getSenders();
+
+    if (senders.length !== 0 && senders[0].transport) {
+        this._dtlsTransport = senders[0].transport;
+
+        this._dtlsTransport.onerror = error => {
+            logger.error(`${this} DtlsTransport error: ${error}`);
+        };
+
+        this._dtlsTransport.onstatechange = () => {
+            this.trace('dtlsTransport.onstatechange', this._dtlsTransport.state);
+        };
+    }
+};
 
 /**
  * Configures the stream encodings depending on the video type and the bitrates configured.
@@ -2282,6 +2312,9 @@ TraceablePeerConnection.prototype.setLocalDescription = function(description) {
                     this.eventEmitter.emit(
                         RTCEvents.LOCAL_UFRAG_CHANGED, this, localUfrag);
                 }
+
+                this._initializeDtlsTransport();
+
                 resolve();
             }, err => {
                 this.trace('setLocalDescriptionOnFailure', err);
@@ -2537,6 +2570,9 @@ TraceablePeerConnection.prototype.setRemoteDescription = function(description) {
                     this.eventEmitter.emit(
                         RTCEvents.REMOTE_UFRAG_CHANGED, this, remoteUfrag);
                 }
+
+                this._initializeDtlsTransport();
+
                 resolve();
             }, err => {
                 this.trace('setRemoteDescriptionOnFailure', err);
@@ -3081,10 +3117,10 @@ TraceablePeerConnection.prototype._extractPrimarySSRC = function(ssrcObj) {
  */
 TraceablePeerConnection.prototype._processLocalSSRCsMap = function(ssrcMap) {
     for (const track of this.localTracks.values()) {
-        const trackMSID = track.storedMSID;
+        const sourceIdentifier = this._usesUnifiedPlan ? track.getType() : track.storedMSID;
 
-        if (ssrcMap.has(trackMSID)) {
-            const newSSRC = ssrcMap.get(trackMSID);
+        if (ssrcMap.has(sourceIdentifier)) {
+            const newSSRC = ssrcMap.get(sourceIdentifier);
 
             if (!newSSRC) {
                 logger.error(`No SSRC found for: ${trackMSID} in ${this}`);
@@ -3097,23 +3133,9 @@ TraceablePeerConnection.prototype._processLocalSSRCsMap = function(ssrcMap) {
 
             // eslint-disable-next-line no-negated-condition
             if (newSSRCNum !== oldSSRCNum) {
-                if (oldSSRCNum === null) {
-                    logger.info(
-                        `Storing new local SSRC for ${track} in ${this}`,
-                        newSSRC);
-                } else {
-                    logger.error(
-                        `Overwriting SSRC for ${track} ${trackMSID} in ${this
-                        } with: `, newSSRC);
-                }
+                oldSSRCNum && logger.error(`${this} Overwriting SSRC for track=${track}] with ssrc=${newSSRC}`);
                 this.localSSRCs.set(track.rtcId, newSSRC);
-
-                this.eventEmitter.emit(
-                    RTCEvents.LOCAL_TRACK_SSRC_UPDATED, track, newSSRCNum);
-            } else {
-                logger.debug(
-                    `The local SSRC(${newSSRCNum}) for ${track} ${trackMSID}`
-                     + `is still up to date in ${this}`);
+                this.eventEmitter.emit(RTCEvents.LOCAL_TRACK_SSRC_UPDATED, track, newSSRCNum);
             }
         } else if (!track.isVideoTrack() && !track.isMuted()) {
             // It is normal to find no SSRCs for a muted video track in
