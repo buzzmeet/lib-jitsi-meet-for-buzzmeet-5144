@@ -1734,10 +1734,10 @@ TraceablePeerConnection.prototype.addTrack = function(track, isInitiator = false
     }
 
     this.localTracks.set(rtcId, track);
+    const webrtcStream = track.getOriginalStream();
 
-    // For p2p unified case, use addTransceiver API to add the tracks on the peerconnection.
-    // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
-    if (browser.usesUnifiedPlan() && this.isP2P) {
+    if (browser.usesUnifiedPlan()) {
+        logger.debug(`${this} TPC.addTrack using unified plan`);
         try {
             this.tpcUtils.addTrack(track, isInitiator);
         } catch (error) {
@@ -1746,13 +1746,7 @@ TraceablePeerConnection.prototype.addTrack = function(track, isInitiator = false
             return Promise.reject(error);
         }
     } else {
-        // In all other cases, i.e., plan-b and unified plan bridge case, use addStream API to
-        // add the track to the peerconnection.
-        // TODO - addTransceiver doesn't generate a MSID for the stream, which is needed for signaling
-        // the ssrc to Jicofo. Switch to using UUID as MSID when addTransceiver is used in Unified plan
-        // JVB connection case as well.
-        const webrtcStream = track.getOriginalStream();
-
+        // Use addStream API for the plan-b case.
         if (webrtcStream) {
             this._addStream(webrtcStream);
 
@@ -1796,7 +1790,7 @@ TraceablePeerConnection.prototype.addTrack = function(track, isInitiator = false
 
     // On Firefox, the encodings have to be configured on the sender only after the transceiver is created.
     if (browser.isFirefox()) {
-        promiseChain = this.tpcUtils.setEncodings(track);
+        promiseChain = promiseChain.then(() => webrtcStream && this.tpcUtils.setEncodings(track));
     }
 
     return promiseChain;
@@ -2908,14 +2902,15 @@ TraceablePeerConnection.prototype.close = function() {
     this.trace('stop');
 
     // Off SignalingEvents
-    this.signalingLayer.off(
-        SignalingEvents.PEER_MUTED_CHANGED, this._peerMutedChanged);
-    this.signalingLayer.off(
-        SignalingEvents.PEER_VIDEO_TYPE_CHANGED, this._peerVideoTypeChanged);
+    this.signalingLayer.off(SignalingEvents.PEER_MUTED_CHANGED, this._peerMutedChanged);
+    this.signalingLayer.off(SignalingEvents.PEER_VIDEO_TYPE_CHANGED, this._peerVideoTypeChanged);
+    browser.usesUnifiedPlan() && this.peerconnection.removeEventListener('track', this.onTrack);
 
     for (const peerTracks of this.remoteTracks.values()) {
-        for (const remoteTrack of peerTracks.values()) {
-            this._removeRemoteTrack(remoteTrack);
+        for (const remoteTracks of peerTracks.values()) {
+            for (const remoteTrack of remoteTracks) {
+                this._removeRemoteTrack(remoteTrack);
+            }
         }
     }
     this.remoteTracks.clear();

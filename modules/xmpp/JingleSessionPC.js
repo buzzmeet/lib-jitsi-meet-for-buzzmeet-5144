@@ -928,13 +928,9 @@ export default class JingleSessionPC extends JingleSession {
                 // modify sendSessionAccept method to do that
                 this.sendSessionAccept(() => {
                     success();
-
-                    this.room.eventEmitter.emit(XMPPEvents.SESSION_ACCEPT, this);
                 },
                 error => {
                     failure(error);
-
-                    this.room.eventEmitter.emit(XMPPEvents.SESSION_ACCEPT_ERROR, this, error);
                 });
             },
             failure,
