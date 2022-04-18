@@ -306,7 +306,7 @@ export default function TraceablePeerConnection(
      * sending SSRC updates on attach/detach and mute/unmute (for video).
      * @type {LocalSdpMunger}
      */
-    this.localSdpMunger = new LocalSdpMunger(this);
+    this.localSdpMunger = new LocalSdpMunger(this, this.rtc.getLocalEndpointId());
 
     /**
      * TracablePeerConnection uses RTC's eventEmitter
@@ -3414,3 +3414,7 @@ TraceablePeerConnection.prototype._isSharingScreen = function() {
 
     return removeSsrcInfo;
 };
+
+TraceablePeerConnection.prototype.usesUnifiedPlan = function() {
+    return browser.usesUnifiedPlan();
+}
