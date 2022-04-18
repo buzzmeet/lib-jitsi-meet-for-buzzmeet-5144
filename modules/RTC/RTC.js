@@ -573,10 +573,10 @@ export default class RTC extends Listenable {
         // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
         pcConfig.sdpSemantics = 'unified-plan';
 
-        if (browser.supportsSdpSemantics()) {
-            logger.debug('WebRTC application is running in plan-b mode');
-            pcConfig.sdpSemantics = 'plan-b';
-        }
+        // if (browser.supportsSdpSemantics()) {
+        //     logger.debug('WebRTC application is running in plan-b mode');
+        //     pcConfig.sdpSemantics = 'plan-b';
+        // }
 
         if (options.forceTurnRelay) {
             pcConfig.iceTransportPolicy = 'relay';
