@@ -527,7 +527,7 @@ export class TPCUtils {
         transceivers.forEach((transceiver, idx) => {
             if (active) {
                 // The first transceiver is for the local track and only this one can be set to 'sendrecv'
-                if (idx === 0 && localTracks.length) {
+                if (idx < localTracks.length) {
                     transceiver.direction = 'sendrecv';
                 } else {
                     transceiver.direction = 'recvonly';
