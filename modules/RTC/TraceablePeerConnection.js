@@ -411,6 +411,13 @@ export default function TraceablePeerConnection(
             this.onnegotiationneeded(event);
         }
     };
+    this.onconnectionstatechange = null;
+    this.peerconnection.onconnectionstatechange = event => {
+        this.trace('onconnectionstatechange', this.connectionState);
+        if (this.onconnectionstatechange !== null) {
+            this.onconnectionstatechange(event);
+        }
+    };
     this.ondatachannel = null;
     this.peerconnection.ondatachannel = event => {
         this.trace('ondatachannel');
@@ -518,8 +525,9 @@ TraceablePeerConnection.prototype.getConnectionState = function() {
  * connection.
  * @private
  */
-TraceablePeerConnection.prototype._getDesiredMediaDirection = function(
-        mediaType, isAddOperation = false) {
+TraceablePeerConnection.prototype.getDesiredMediaDirection = function(mediaType, isAddOperation = false) {
+    const hasLocalSource = this.hasAnyTracksOfType(mediaType);
+
     if (browser.usesUnifiedPlan()) {
         return isAddOperation
             ? hasLocalSource ? MediaDirection.SENDRECV : MediaDirection.SENDONLY
@@ -1197,7 +1205,20 @@ function extractSSRCMap(desc) {
         return ssrcMap;
     }
 
-    for (const mLine of session.media) {
+    let media = session.media;
+
+    // For unified plan clients, only the first audio and video mlines will have ssrcs for the local sources.
+    // The rest of the m-lines are for the recv-only sources, one for each remote source.
+    if (browser.usesUnifiedPlan()) {
+        media = [];
+        [ MediaType.AUDIO, MediaType.VIDEO ].forEach(mediaType => {
+            const mLine = session.media.find(m => m.type === mediaType);
+
+            mLine && media.push(mLine);
+        });
+    }
+
+    for (const mLine of media) {
         if (!Array.isArray(mLine.ssrcs)) {
             continue; // eslint-disable-line no-continue
         }
@@ -1484,6 +1505,9 @@ const getters = {
     },
     iceConnectionState() {
         return this.peerconnection.iceConnectionState;
+    },
+    connectionState() {
+        return this.peerconnection.connectionState;
     },
     localDescription() {
         let desc = this.peerconnection.localDescription;
@@ -2584,7 +2608,7 @@ TraceablePeerConnection.prototype.setRemoteDescription = function(description) {
                 if (this.getConfiguredVideoCodec() === CodecMimeType.VP8
                     && (this.options?.videoQuality?.maxBitratesVideo
                         || this.isSharingLowFpsScreen()
-                        || this._usesUnifiedPlan)) {
+                        || browser.usesUnifiedPlan())) {
                     parameters.encodings[encoding].maxBitrate = maxBitrates[encoding];
                 }
             }

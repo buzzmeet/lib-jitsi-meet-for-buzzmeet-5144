@@ -1628,6 +1628,7 @@ export default class JingleSessionPC extends JingleSession {
      */
     _parseSsrcInfoFromSourceAdd(sourceAddElem, currentRemoteSdp) {
         const addSsrcInfo = [];
+        const self = this;
 
         $(sourceAddElem).each((i1, content) => {
             const name = $(content).attr('name');
@@ -1648,9 +1649,7 @@ export default class JingleSessionPC extends JingleSession {
                             .get();
 
                     if (ssrcs.length) {
-                        lines
-                            += `a=ssrc-group:${semantics} ${
-                                ssrcs.join(' ')}\r\n`;
+                        lines += `a=ssrc-group:${semantics} ${ssrcs.join(' ')}\r\n`;
                     }
                 });
 
@@ -1680,6 +1679,8 @@ export default class JingleSessionPC extends JingleSession {
                 });
             });
 
+            let midFound = false;
+
             /* eslint-enable no-invalid-this */
             currentRemoteSdp.media.forEach((media, i2) => {
                 if (!SDPUtil.findLine(media, `a=mid:${name}`)) {
@@ -1689,7 +1690,14 @@ export default class JingleSessionPC extends JingleSession {
                     addSsrcInfo[i2] = '';
                 }
                 addSsrcInfo[i2] += lines;
+                midFound = true;
             });
+
+            // In p2p unified mode with multi-stream enabled, the new sources will have content name that doesn't exist
+            // in the current remote description. Add a new m-line for this newly signaled source.
+            if (!midFound && this.isP2P && FeatureFlags.isSourceNameSignalingEnabled()) {
+                addSsrcInfo[name] = lines;
+            }
         });
 
         return addSsrcInfo;
@@ -2380,11 +2388,13 @@ export default class JingleSessionPC extends JingleSession {
                     if (shouldRenegotiate && oldLocalSDP && tpc.remoteDescription.sdp) {
                         this._renegotiate()
                             .then(() => {
-                                // The results are ignored, as this check failure is not
-                                // enough to fail the whole operation. It will log
-                                // an error inside.
-                                this._verifyNoSSRCChanged(
-                                    operationName, new SDP(oldLocalSDP));
+                                // The results are ignored, as this check failure is not enough to fail the whole
+                                // operation. It will log an error inside for plan-b.
+                                !browser.usesUnifiedPlan() && this._verifyNoSSRCChanged(operationName, new SDP(oldLocalSDP));
+                                const newLocalSdp = tpc.localDescription.sdp;
+
+                                // Signal the ssrc if an unmute operation results in a new ssrc being generated.
+                                this.notifyMySSRCUpdate(new SDP(oldLocalSDP), new SDP(newLocalSdp));
                                 finishedCallback();
                             });
                     } else {
