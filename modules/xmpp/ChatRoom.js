@@ -1555,6 +1555,13 @@ export default class ChatRoom extends Listenable {
      * @param mute
      */
     addAudioInfoToPresence(mute) {
+        const audioMutedTagName = 'audiomuted';
+
+        // we skip adding it as muted is default value
+        if (mute && !this.getFromPresence(audioMutedTagName)) {
+            return false;
+        }
+        
         this.addOrReplaceInPresence(
             'audiomuted',
             {
@@ -1583,6 +1590,12 @@ export default class ChatRoom extends Listenable {
      * @param mute
      */
     addVideoInfoToPresence(mute) {
+        const videoMutedTagName = 'videomuted';
+
+        // we skip adding it as muted is default value
+        if (mute && !this.getFromPresence(videoMutedTagName)) {
+            return false;
+        }
         this.addOrReplaceInPresence(
             'videomuted',
             {

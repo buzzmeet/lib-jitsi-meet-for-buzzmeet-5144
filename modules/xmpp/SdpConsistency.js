@@ -1,5 +1,5 @@
 /* global __filename */
-
+import { MediaType } from '../../service/RTC/MediaType';
 import { getLogger } from 'jitsi-meet-logger';
 
 import {
@@ -74,7 +74,7 @@ export default class SdpConsistency {
      */
     makeVideoPrimarySsrcsConsistent(sdpStr) {
         const sdpTransformer = new SdpTransformWrap(sdpStr);
-        const videoMLine = sdpTransformer.selectMedia('video');
+        const videoMLine = sdpTransformer.selectMedia(MediaType.VIDEO)?.[0];
 
         if (!videoMLine) {
             logger.debug(
