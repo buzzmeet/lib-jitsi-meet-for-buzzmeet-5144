@@ -1043,7 +1043,7 @@ export default class JingleSessionPC extends JingleSession {
             jingleAnswer,
             () => {
                 logger.info(`${this} setAnswer - succeeded`);
-                if (this.usesUnifiedPlan && browser.isChromiumBased()) {
+                if (browser.usesUnifiedPlan() && browser.isChromiumBased()) {
                     const workFunction = finishedCallback => {
                         // This hack is needed for Chrome to create a decoder for the ssrcs in the remote SDP when
                         // the local endpoint is the offerer and starts muted.
@@ -1802,7 +1802,7 @@ export default class JingleSessionPC extends JingleSession {
                 type: 'offer',
                 sdp: newRemoteSdp.raw
             });
-            const promise = isAdd && this.usesUnifiedPlan && this.isP2P && browser.isChromiumBased()
+            const promise = isAdd && browser.usesUnifiedPlan() && this.isP2P && browser.isChromiumBased()
                 ? this._responderRenegotiate(remoteDescription)
                 : this._renegotiate(newRemoteSdp.raw);
 
@@ -1855,7 +1855,7 @@ export default class JingleSessionPC extends JingleSession {
      *  in removeSsrcInfo
      */
     _processRemoteRemoveSource(removeSsrcInfo) {
-        const remoteSdp = this.usesUnifiedPlan
+        const remoteSdp = browser.usesUnifiedPlan()
             ? new SDP(this.peerconnection.peerconnection.remoteDescription.sdp)
             : new SDP(this.peerconnection.remoteDescription.sdp);
 
@@ -1863,7 +1863,7 @@ export default class JingleSessionPC extends JingleSession {
             // eslint-disable-next-line no-param-reassign
             lines = lines.split('\r\n');
             lines.pop(); // remove empty last element;
-            if (this.usesUnifiedPlan) {
+            if (browser.usesUnifiedPlan()) {
                 let mid;
 
                 lines.forEach(line => {
@@ -1921,7 +1921,7 @@ export default class JingleSessionPC extends JingleSession {
         if (addSsrcInfo.length > remoteSdp.media.length
             && FeatureFlags.isSourceNameSignalingEnabled()
             && this.isP2P
-            && this.usesUnifiedPlan) {
+            && browser.usesUnifiedPlan()) {
             remoteSdp.addMlineForNewLocalSource(MediaType.VIDEO);
             remoteSdp = new SDP(remoteSdp.raw);
         }
@@ -1930,7 +1930,7 @@ export default class JingleSessionPC extends JingleSession {
 
             // Make sure to change the direction to 'sendrecv/sendonly' only for p2p connections. For jvb connections,
             // a new m-line is added for the new remote sources.
-            if (this.isP2P && this.usesUnifiedPlan) {
+            if (this.isP2P && browser.usesUnifiedPlan()) {
                 const mediaType = SDPUtil.parseMLine(remoteSdp.media[idx].split('\r\n')[0])?.media;
                 const desiredDirection = this.peerconnection.getDesiredMediaDirection(mediaType, true);
 
@@ -2381,7 +2381,7 @@ export default class JingleSessionPC extends JingleSession {
                             .then(() => {
                                 // The results are ignored, as this check failure is not enough to fail the whole
                                 // operation. It will log an error inside for plan-b.
-                                !this.usesUnifiedPlan && this._verifyNoSSRCChanged(operationName, new SDP(oldLocalSDP));
+                                !browser.usesUnifiedPlan() && this._verifyNoSSRCChanged(operationName, new SDP(oldLocalSDP));
                                 const newLocalSdp = tpc.localDescription.sdp;
 
                                 // Signal the ssrc if an unmute operation results in a new ssrc being generated.

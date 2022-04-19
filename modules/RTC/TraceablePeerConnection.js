@@ -286,18 +286,18 @@ export default function TraceablePeerConnection(
     //         explodeRemoteSimulcast: false,
     //         usesUnifiedPlan: browser.usesUnifiedPlan()
     //     });
-    //if (browser.usesUnifiedPlan()) {
+    if (browser.usesUnifiedPlan()) {
         this.simulcast = new SdpSimulcast({ numOfLayers: SIM_LAYER_RIDS.length })
-    // } else {
-    //     const Simulcast = require('@jitsi/sdp-simulcast');
+    } else {
+        const Simulcast = require('@jitsi/sdp-simulcast');
 
-    //     this.simulcast = new Simulcast(
-    //         {
-    //             numOfLayers: SIM_LAYER_RIDS.length,
-    //             explodeRemoteSimulcast: false,
-    //             usesUnifiedPlan: false
-    //         });
-    // }
+        this.simulcast = new Simulcast(
+            {
+                numOfLayers: SIM_LAYER_RIDS.length,
+                explodeRemoteSimulcast: false,
+                usesUnifiedPlan: false
+            });
+    }
 
     this.sdpConsistency = new SdpConsistency(this.toString());
 
@@ -2154,7 +2154,7 @@ TraceablePeerConnection.prototype._adjustLocalMediaDirection = function(
 
     if (audioMedia) {
         const desiredAudioDirection
-            = this._getDesiredMediaDirection(MediaType.AUDIO);
+            = this.getDesiredMediaDirection(MediaType.AUDIO);
 
         if (audioMedia.direction !== desiredAudioDirection) {
             audioMedia.direction = desiredAudioDirection;
@@ -2170,7 +2170,7 @@ TraceablePeerConnection.prototype._adjustLocalMediaDirection = function(
 
     if (videoMedia) {
         const desiredVideoDirection
-            = this._getDesiredMediaDirection(MediaType.VIDEO);
+            = this.getDesiredMediaDirection(MediaType.VIDEO);
 
         if (videoMedia.direction !== desiredVideoDirection) {
             videoMedia.direction = desiredVideoDirection;
