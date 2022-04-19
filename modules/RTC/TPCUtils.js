@@ -427,52 +427,110 @@ export class TPCUtils {
      * @returns {Promise<void>} - resolved when done.
      */
     replaceTrack(oldTrack, newTrack) {
-        const mediaType = newTrack?.getType() ? newTrack?.getType() : oldTrack?.getType();
-        const track = newTrack?.getTrack() ? newTrack?.getTrack() : null;
-        const isNewLocalSource = FeatureFlags.isMultiStreamSupportEnabled()
-            && this.pc.getLocalTracks(mediaType)?.length
-            && !oldTrack
-            && newTrack
-            && !newTrack.conference;
-        let transceiver;
+        if (!browser.isReactNative()) {
+            const mediaType = newTrack?.getType() ? newTrack?.getType() : oldTrack?.getType();
+            const track = newTrack?.getTrack() ? newTrack?.getTrack() : null;
+            const isNewLocalSource = FeatureFlags.isMultiStreamSupportEnabled()
+                && this.pc.getLocalTracks(mediaType)?.length
+                && !oldTrack
+                && newTrack
+                && !newTrack.conference;
+            let transceiver;
 
-        // If old track exists, replace the track on the corresponding sender.
-        if (oldTrack && !oldTrack.isMuted()) {
-            transceiver = this.pc.peerconnection.getTransceivers().find(t => t.sender.track === oldTrack.getTrack());
+            // If old track exists, replace the track on the corresponding sender.
+            if (oldTrack && !oldTrack.isMuted()) {
+                transceiver = this.pc.peerconnection.getTransceivers().find(t => t.sender.track === oldTrack.getTrack());
 
-        // Find the first recvonly transceiver when more than one track of the same media type is being added to the pc.
-        // As part of the track addition, a new m-line was added to the remote description with direction set to
-        // recvonly.
-        } else if (isNewLocalSource) {
-            transceiver = this.pc.peerconnection.getTransceivers().find(
-                t => t.receiver.track.kind === mediaType
-                && t.direction === MediaDirection.RECVONLY
-                && t.currentDirection === MediaDirection.INACTIVE);
+            // Find the first recvonly transceiver when more than one track of the same media type is being added to the pc.
+            // As part of the track addition, a new m-line was added to the remote description with direction set to
+            // recvonly.
+            } else if (isNewLocalSource) {
+                transceiver = this.pc.peerconnection.getTransceivers().find(
+                    t => t.receiver.track.kind === mediaType
+                    && t.direction === MediaDirection.RECVONLY
+                    && t.currentDirection === MediaDirection.INACTIVE);
 
-        // For mute/unmute operations, find the transceiver based on the track index in the source name if present,
-        // otherwise it is assumed to be the first local track that was added to the peerconnection.
-        } else {
-            transceiver = this.pc.peerconnection.getTransceivers().find(t => t.receiver.track.kind === mediaType);
-            const sourceName = newTrack?.getSourceName() ? newTrack?.getSourceName() : oldTrack?.getSourceName();
+            // For mute/unmute operations, find the transceiver based on the track index in the source name if present,
+            // otherwise it is assumed to be the first local track that was added to the peerconnection.
+            } else {
+                transceiver = this.pc.peerconnection.getTransceivers().find(t => t.receiver.track.kind === mediaType);
+                const sourceName = newTrack?.getSourceName() ? newTrack?.getSourceName() : oldTrack?.getSourceName();
 
-            if (sourceName) {
-                const trackIndex = Number(sourceName.split('-')[1].substring(1));
+                if (sourceName) {
+                    const trackIndex = Number(sourceName.split('-')[1].substring(1));
 
-                if (trackIndex) {
-                    transceiver = this.pc.peerconnection.getTransceivers()
-                        .filter(t => t.receiver.track.kind === mediaType
-                            && t.direction !== MediaDirection.RECVONLY)[trackIndex];
+                    if (trackIndex) {
+                        transceiver = this.pc.peerconnection.getTransceivers()
+                            .filter(t => t.receiver.track.kind === mediaType
+                                && t.direction !== MediaDirection.RECVONLY)[trackIndex];
+                    }
                 }
             }
-        }
 
-        if (!transceiver) {
-            return Promise.reject(new Error('replace track failed'));
-        }
-        logger.debug(`${this.pc} Replacing ${oldTrack} with ${newTrack}`);
+            if (!transceiver) {
+                return Promise.reject(new Error('replace track failed'));
+            }
+            logger.debug(`${this.pc} Replacing ${oldTrack} with ${newTrack}`);
 
-        return transceiver.sender.replaceTrack(track)
-            .then(() => Promise.resolve(transceiver));
+            return transceiver.sender.replaceTrack(track)
+                .then(() => Promise.resolve(transceiver));
+        } else {
+            if (oldTrack && newTrack) {
+                const mediaType = newTrack.getType();
+                const stream = newTrack.getOriginalStream();
+    
+                // Ignore cases when the track is replaced while the device is in a muted state,like
+                // replacing camera when video muted or replacing mic when audio muted. These JitsiLocalTracks
+                // do not have a mediastream attached. Replace track will be called again when the device is
+                // unmuted and the track will be replaced on the peerconnection then.
+                if (!stream) {
+                    this.pc.localTracks.delete(oldTrack.rtcId);
+                    this.pc.localTracks.set(newTrack.rtcId, newTrack);
+    
+                    return Promise.resolve();
+                }
+                const track = mediaType === MediaType.AUDIO
+                    ? stream.getAudioTracks()[0]
+                    : stream.getVideoTracks()[0];
+                const transceiver = this.pc.peerconnection.getTransceivers()
+                    .find(t => t.receiver.track.kind === mediaType && !t.stopped);
+    
+                if (!transceiver) {
+                    return Promise.reject(new Error('replace track failed'));
+                }
+                logger.debug(`Replacing ${oldTrack} with ${newTrack} on ${this.pc}`);
+    
+                return transceiver.sender.replaceTrack(track)
+                    .then(() => {
+                        const ssrc = this.pc.localSSRCs.get(oldTrack.rtcId);
+    
+                        this.pc.localTracks.delete(oldTrack.rtcId);
+                        this.pc.localSSRCs.delete(oldTrack.rtcId);
+                        this.pc._addedStreams = this.pc._addedStreams.filter(s => s !== stream);
+                        this.pc.localTracks.set(newTrack.rtcId, newTrack);
+    
+                        this.pc._addedStreams.push(stream);
+                        this.pc.localSSRCs.set(newTrack.rtcId, ssrc);
+                        this.pc.eventEmitter.emit(RTCEvents.LOCAL_TRACK_SSRC_UPDATED,
+                            newTrack,
+                            this.pc._extractPrimarySSRC(ssrc));
+                    });
+            } else if (oldTrack && !newTrack) {
+                return this.removeTrackMute(oldTrack)
+                    .then(() => {
+                        this.pc.localTracks.delete(oldTrack.rtcId);
+                        this.pc.localSSRCs.delete(oldTrack.rtcId);
+                    });
+            } else if (newTrack && !oldTrack) {
+                const ssrc = this.pc.localSSRCs.get(newTrack.rtcId);
+    
+                return this.addTrackUnmute(newTrack)
+                    .then(() => {
+                        this.pc.localTracks.set(newTrack.rtcId, newTrack);
+                        this.pc.localSSRCs.set(newTrack.rtcId, ssrc);
+                    });
+            }
+        }
     }
 
     /**
