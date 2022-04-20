@@ -3160,8 +3160,6 @@ JitsiConference.prototype._resumeMediaTransferForJvbConnection = function() {
  * @private
  */
 JitsiConference.prototype._setP2PStatus = function(newStatus) {
-    console.info(this.p2p + " > " + newStatus);
-    console.info(console.trace());
     if (this.p2p === newStatus) {
         logger.debug(`Called _setP2PStatus with the same status: ${newStatus}`);
 
@@ -3192,17 +3190,16 @@ JitsiConference.prototype._setP2PStatus = function(newStatus) {
     } else {
         logger.info('Peer to peer connection closed!');
     }
-    console.info("next1")
+
     // Put the JVB connection on hold/resume
     if (this.jvbJingleSession) {
-        console.info("jvbjinglesession")
         this.statistics.sendConnectionResumeOrHoldEvent(
             this.jvbJingleSession.peerconnection, !newStatus);
     }
 
     // Clear dtmfManager, so that it can be recreated with new connection
     this.dtmfManager = null;
-    console.info("next2")
+
     // Update P2P status
     this.eventEmitter.emit(
         JitsiConferenceEvents.P2P_STATUS,
@@ -3211,7 +3208,7 @@ JitsiConference.prototype._setP2PStatus = function(newStatus) {
     this.eventEmitter.emit(
         JitsiConferenceEvents._MEDIA_SESSION_ACTIVE_CHANGED,
         this._getActiveMediaSession());
-    console.info("next3")
+
     // Refresh connection interrupted/restored
     this.eventEmitter.emit(
         this.isConnectionInterrupted()

@@ -1729,7 +1729,7 @@ export default class ChatRoom extends Listenable {
                 type: 'set' })
             .c('mute', {
                 xmlns: 'http://jitsi.org/jitmeet/audio',
-                jid
+                jid: jid
             })
             .t(mute.toString())
             .up();
