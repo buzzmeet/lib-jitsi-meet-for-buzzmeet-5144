@@ -81,7 +81,7 @@ JitsiConferenceEventManager.prototype.setupChatRoomListeners = function() {
 
         if (participant) {
             participant.setFeatures(features);
-            conference.eventEmitter.emit(JitsiConferenceEvents.PARTCIPANT_FEATURES_CHANGED, participant);
+            conference.eventEmitter.emit(JitsiConferenceEvents.PARTICIPANT_FEATURES_CHANGED, participant);
         }
     });
 
@@ -583,11 +583,6 @@ JitsiConferenceEventManager.prototype.setupRTCListeners = function() {
 JitsiConferenceEventManager.prototype.removeXMPPListeners = function() {
     const conference = this.conference;
 
-    conference.xmpp.caps.removeListener(
-        XMPPEvents.PARTCIPANT_FEATURES_CHANGED,
-        this.xmppListeners[XMPPEvents.PARTCIPANT_FEATURES_CHANGED]);
-    delete this.xmppListeners[XMPPEvents.PARTCIPANT_FEATURES_CHANGED];
-
     Object.keys(this.xmppListeners).forEach(eventName => {
         conference.xmpp.removeListener(
             eventName,
@@ -602,24 +597,6 @@ JitsiConferenceEventManager.prototype.removeXMPPListeners = function() {
  */
 JitsiConferenceEventManager.prototype.setupXMPPListeners = function() {
     const conference = this.conference;
-
-    const featuresChangedListener = from => {
-        const participant
-            = conference.getParticipantById(
-            Strophe.getResourceFromJid(from));
-
-        if (participant) {
-            conference.eventEmitter.emit(
-                JitsiConferenceEvents.PARTCIPANT_FEATURES_CHANGED,
-                participant);
-        }
-    };
-
-    conference.xmpp.caps.addListener(
-        XMPPEvents.PARTCIPANT_FEATURES_CHANGED,
-        featuresChangedListener);
-    this.xmppListeners[XMPPEvents.PARTCIPANT_FEATURES_CHANGED]
-        = featuresChangedListener;
 
     this._addConferenceXMPPListener(
         XMPPEvents.CALL_INCOMING,

@@ -205,8 +205,8 @@ export const PARTICIPANT_CONN_STATUS_CHANGED
 /**
  * Indicates that the features of the participant has been changed.
  */
-export const PARTCIPANT_FEATURES_CHANGED
-    = 'conference.partcipant_features_changed';
+export const PARTICIPANT_FEATURES_CHANGED
+    = 'conference.participant_features_changed';
 
 /**
  * Indicates that a the value of a specific property of a specific participant
