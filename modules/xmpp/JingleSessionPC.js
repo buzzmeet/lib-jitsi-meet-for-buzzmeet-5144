@@ -521,7 +521,7 @@ export default class JingleSessionPC extends JingleSession {
                 if (!this.wasConnected
                     && (this.wasstable
                         || isStable
-                        || (this.usesUnifiedPlan && this.isInitiator && browser.isChromiumBased()))) {
+                        || (browser.usesUnifiedPlan() && this.isInitiator && browser.isChromiumBased()))) {
 
                     Statistics.sendAnalytics(
                         ICE_DURATION,
@@ -550,7 +550,7 @@ export default class JingleSessionPC extends JingleSession {
                             p2p: this.isP2P,
                             initiator: this.isInitiator
                         });
-
+                    console.info("erererererererer");
                     this.wasConnected = true;
                     this.room.eventEmitter.emit(
                         XMPPEvents.CONNECTION_ESTABLISHED, this);
@@ -1692,7 +1692,7 @@ export default class JingleSessionPC extends JingleSession {
                 if (currentRemoteSdp.containsSSRC(ssrc)) {
 
                     // Do not print the warning for unified plan p2p case since ssrcs are never removed from the SDP.
-                    !(self.usesUnifiedPlan && self.isP2P)
+                    !(browser.usesUnifiedPlan() && self.isP2P)
                         && logger.warn(`${self} Source-add request for existing SSRC: ${ssrc}`);
 
                     return;
