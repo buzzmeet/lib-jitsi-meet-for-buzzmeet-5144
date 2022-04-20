@@ -966,9 +966,13 @@ export default class JingleSessionPC extends JingleSession {
                 // modify sendSessionAccept method to do that
                 this.sendSessionAccept(() => {
                     success();
+
+                    this.room.eventEmitter.emit(XMPPEvents.SESSION_ACCEPT, this);
                 },
                 error => {
                     failure(error);
+
+                    this.room.eventEmitter.emit(XMPPEvents.SESSION_ACCEPT_ERROR, this, error);
                 });
             },
             failure,
@@ -1059,6 +1063,7 @@ export default class JingleSessionPC extends JingleSession {
             this.isInitiator ? 'initiator' : 'responder');
         init = init.tree();
         logger.info('Session-initiate: ', init);
+        console.log('>>>>>>>>>' + init);
         this.connection.sendIQ(init,
             () => {
                 logger.info('Got RESULT for "session-initiate"');
