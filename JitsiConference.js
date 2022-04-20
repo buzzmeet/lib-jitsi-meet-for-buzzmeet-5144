@@ -2017,18 +2017,24 @@ JitsiConference.prototype._onIncomingCallP2P = function(
         jingleOffer) {
 
     let rejectReason;
+    const usesUnifiedPlan = browser.usesUnifiedPlan();
+    const contentName = jingleOffer.find('>content').attr('name');
+    const peerUsesUnifiedPlan = contentName === '0' || contentName === '1';
 
-    if (!browser.supportsP2P()) {
-        rejectReason = {
-            reason: 'unsupported-applications',
-            reasonDescription: 'P2P not supported',
-            errorMsg: 'This client does not support P2P connections'
-        };
-    } else if (!this.isP2PEnabled() && !this.isP2PTestModeEnabled()) {
+    // Reject P2P between endpoints that are not running in the same mode w.r.t to SDPs (plan-b and unified plan).
+    if (usesUnifiedPlan !== peerUsesUnifiedPlan) {
         rejectReason = {
             reason: 'decline',
             reasonDescription: 'P2P disabled',
-            errorMsg: 'P2P mode disabled in the configuration'
+            errorMsg: 'P2P across two endpoints in different SDP modes is disabled'
+        };
+    } else if ((!this.isP2PEnabled() && !this.isP2PTestModeEnabled())
+        || browser.isFirefox()
+        || browser.isWebKitBased()) {
+        rejectReason = {
+            reason: 'decline',
+            reasonDescription: 'P2P disabled',
+            errorMsg: 'P2P mode disabled in the configuration or browser unsupported'
         };
     } else if (this.p2pJingleSession) {
         // Reject incoming P2P call (already in progress)
@@ -2062,7 +2068,6 @@ JitsiConference.prototype.onIncomingCall = function(
         now) {
     // Handle incoming P2P call
     if (jingleSession.isP2P) {
-        console.log("why p2pp2p2p2p2" + console.trace());
         this._onIncomingCallP2P(jingleSession, jingleOffer);
     } else {
         if (!this.room.isFocus(jingleSession.remoteJid)) {
@@ -2285,6 +2290,8 @@ JitsiConference.prototype.onCallEnded = function(
         // Let the RTC service do any cleanups
         this.rtc.onCallEnded();
     } else if (jingleSession === this.p2pJingleSession) {
+        const stopOptions = {};
+
         // It's the responder who decides to enforce JVB mode, so that both
         // initiator and responder are aware if it was intentional.
         if (reasonCondition === 'decline' && reasonText === 'force JVB121') {
@@ -2296,8 +2303,12 @@ JitsiConference.prototype.onCallEnded = function(
             // terminates the session, before we get the event on our side.
             // But we are able to parse the reason and mark it here.
             Statistics.analytics.addPermanentProperties({ p2pFailed: true });
+        } else if (reasonCondition === 'success' && reasonText === 'restart') {
+            // When we are restarting media sessions we don't want to switch the tracks
+            // to the JVB just yet.
+            stopOptions.requestRestart = true;
         }
-        this._stopP2PSession();
+        this._stopP2PSession(stopOptions);
     } else {
         logger.error(
             'Received onCallEnded for invalid session',

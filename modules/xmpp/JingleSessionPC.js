@@ -1063,7 +1063,6 @@ export default class JingleSessionPC extends JingleSession {
             this.isInitiator ? 'initiator' : 'responder');
         init = init.tree();
         logger.info('Session-initiate: ', init);
-        console.log('>>>>>>>>>' + init);
         this.connection.sendIQ(init,
             () => {
                 logger.info('Got RESULT for "session-initiate"');
