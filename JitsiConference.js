@@ -2062,6 +2062,7 @@ JitsiConference.prototype.onIncomingCall = function(
         now) {
     // Handle incoming P2P call
     if (jingleSession.isP2P) {
+        console.log("why p2pp2p2p2p2" + console.trace());
         this._onIncomingCallP2P(jingleSession, jingleOffer);
     } else {
         if (!this.room.isFocus(jingleSession.remoteJid)) {

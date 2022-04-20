@@ -550,7 +550,7 @@ export default class JingleSessionPC extends JingleSession {
                             p2p: this.isP2P,
                             initiator: this.isInitiator
                         });
-                    console.info("erererererererer" + console.trace());
+
                     this.wasConnected = true;
                     this.room.eventEmitter.emit(
                         XMPPEvents.CONNECTION_ESTABLISHED, this);
