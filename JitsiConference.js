@@ -2234,7 +2234,7 @@ JitsiConference.prototype._setBridgeChannel = function(offerIq, pc) {
 JitsiConference.prototype._rejectIncomingCall = function(
         jingleSession,
         options) {
-    if (options && options.errorMsg) {
+    if (options && options.errorMsg && !browser.isReactNative()) {
         GlobalOnErrorHandler.callErrorHandler(new Error(options.errorMsg));
     }
 
