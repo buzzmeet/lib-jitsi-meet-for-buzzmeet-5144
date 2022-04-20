@@ -568,6 +568,7 @@ export default class JingleSessionPC extends JingleSession {
             const remoteDescription = this.peerconnection.remoteDescription;
 
             if (browser.usesUnifiedPlan() && state === 'stable'
+                && !this.isP2P
                 && remoteDescription && typeof remoteDescription.sdp === 'string') {
                 logger.debug(`onnegotiationneeded fired on ${this.peerconnection} in state: ${state}`);
                 const workFunction = finishedCallback => {
