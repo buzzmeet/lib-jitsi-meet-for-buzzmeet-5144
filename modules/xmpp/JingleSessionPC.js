@@ -467,6 +467,7 @@ export default class JingleSessionPC extends JingleSession {
          */
         this.peerconnection.oniceconnectionstatechange = () => {
             const now = window.performance.now();
+            let isStable = false;
 
             if (!this.isP2P) {
                 this.room.connectionTimes[
