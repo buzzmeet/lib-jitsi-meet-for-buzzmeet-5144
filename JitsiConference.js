@@ -565,7 +565,7 @@ JitsiConference.prototype.isP2PTestModeEnabled = function() {
  * Leaves the conference.
  * @returns {Promise}
  */
-JitsiConference.prototype.leave = function() {
+JitsiConference.prototype.leave = async function() {
     if (this.participantConnectionStatus) {
         this.participantConnectionStatus.dispose();
         this.participantConnectionStatus = null;
@@ -607,24 +607,27 @@ JitsiConference.prototype.leave = function() {
         this.p2pJingleSession = null;
     }
 
-    // leave the conference
-    if (this.room) {
-        const room = this.room;
+    // Leave the conference. If this.room == null we are calling second time leave().
+    if (!this.room) {
+        throw new Error('The conference is has been already left');
+    }
 
-        // Unregister connection state listeners
-        room.removeListener(
-            XMPPEvents.CONNECTION_INTERRUPTED,
-            this._onIceConnectionInterrupted);
-        room.removeListener(
-            XMPPEvents.CONNECTION_RESTORED,
-            this._onIceConnectionRestored);
-        room.removeListener(
-            XMPPEvents.CONNECTION_ESTABLISHED,
-            this._onIceConnectionEstablished);
+    const room = this.room;
 
-        room.removeListener(
-            XMPPEvents.CONFERENCE_PROPERTIES_CHANGED,
-            this._updateProperties);
+    // Unregister connection state listeners
+    room.removeListener(
+        XMPPEvents.CONNECTION_INTERRUPTED,
+        this._onIceConnectionInterrupted);
+    room.removeListener(
+        XMPPEvents.CONNECTION_RESTORED,
+        this._onIceConnectionRestored);
+    room.removeListener(
+        XMPPEvents.CONNECTION_ESTABLISHED,
+        this._onIceConnectionEstablished);
+
+    room.removeListener(
+        XMPPEvents.CONFERENCE_PROPERTIES_CHANGED,
+        this._updateProperties);
 
     room.removeListener(XMPPEvents.MEETING_ID_SET, this._sendConferenceJoinAnalyticsEvent);
     room.removeListener(XMPPEvents.SESSION_ACCEPT, this._updateRoomPresence);
@@ -632,32 +635,33 @@ JitsiConference.prototype.leave = function() {
     room.removeListener(XMPPEvents.SOURCE_ADD_ERROR, this._removeLocalSourceOnReject);
     room.removeListener(XMPPEvents.SOURCE_REMOVE, this._updateRoomPresence);
 
-        this.eventManager.removeXMPPListeners();
+    this.eventManager.removeXMPPListeners();
 
-        this.room = null;
+    this._signalingLayer.setChatRoom(null);
 
-        this._signalingLayer.setChatRoom(null);
+    this.room = null;
 
-        return room.leave()
-            .then(() => {
-                if (this.rtc) {
-                    this.rtc.destroy();
-                }
-            })
-            .catch(error => {
-                // remove all participants because currently the conference
-                // won't be usable anyway. This is done on success automatically
-                // by the ChatRoom instance.
-                this.getParticipants().forEach(
-                    participant => this.onMemberLeft(participant.getJid()));
+    let leaveError;
 
-                throw error;
-            });
+    try {
+        await room.leave();
+    } catch (err) {
+        leaveError = err;
+
+        // Remove all participants because currently the conference
+        // won't be usable anyway. This is done on success automatically
+        // by the ChatRoom instance.
+        this.getParticipants().forEach(
+            participant => this.onMemberLeft(participant.getJid()));
     }
 
-    // If this.room == null we are calling second time leave().
-    return Promise.reject(
-        new Error('The conference is has been already left'));
+    if (this.rtc) {
+        this.rtc.destroy();
+    }
+
+    if (leaveError) {
+        throw leaveError;
+    }
 };
 
 /**
