@@ -154,8 +154,6 @@ JitsiConferenceEventManager.prototype.setupChatRoomListeners = function() {
 
     chatRoom.addListener(XMPPEvents.RENEGOTIATION_FAILED, (e, session) => {
         if (!session.isP2P) {
-            console.info("RENEGOTIATION_FAILED" + e);
-            console.info(console.trace());
             conference.eventEmitter.emit(JitsiConferenceEvents.CONFERENCE_FAILED,
                 JitsiConferenceErrors.OFFER_ANSWER_FAILED, e);
         }
@@ -533,8 +531,6 @@ JitsiConferenceEventManager.prototype.setupRTCListeners = function() {
 
     rtc.addListener(RTCEvents.CREATE_ANSWER_FAILED,
         (e, tpc) => {
-            console.info("CREATE_ANSWER_FAILED" + e);
-            console.info(console.trace());
             conference.statistics.sendCreateAnswerFailed(e, tpc);
             if (!tpc.isP2P) {
                 conference.eventEmitter.emit(JitsiConferenceEvents.CONFERENCE_FAILED,
@@ -544,8 +540,6 @@ JitsiConferenceEventManager.prototype.setupRTCListeners = function() {
 
     rtc.addListener(RTCEvents.CREATE_OFFER_FAILED,
         (e, tpc) => {
-            console.info("CREATE_OFFER_FAILED" + e);
-            console.info(console.trace());
             conference.statistics.sendCreateOfferFailed(e, tpc);
             if (!tpc.isP2P) {
                 conference.eventEmitter.emit(JitsiConferenceEvents.CONFERENCE_FAILED,
@@ -555,8 +549,6 @@ JitsiConferenceEventManager.prototype.setupRTCListeners = function() {
 
     rtc.addListener(RTCEvents.SET_LOCAL_DESCRIPTION_FAILED,
         (e, tpc) => {
-            console.info("SET_LOCAL_DESCRIPTION_FAILED" + e);
-            console.info(console.trace());
             conference.statistics.sendSetLocalDescFailed(e, tpc);
             if (!tpc.isP2P) {
                 conference.eventEmitter.emit(JitsiConferenceEvents.CONFERENCE_FAILED,
@@ -566,8 +558,6 @@ JitsiConferenceEventManager.prototype.setupRTCListeners = function() {
 
     rtc.addListener(RTCEvents.SET_REMOTE_DESCRIPTION_FAILED,
         (e, tpc) => {
-            console.info("SET_REMOTE_DESCRIPTION_FAILED" + e);
-            console.info(console.trace());
             conference.statistics.sendSetRemoteDescFailed(e, tpc);
             if (!tpc.isP2P) {
                 conference.eventEmitter.emit(JitsiConferenceEvents.CONFERENCE_FAILED,

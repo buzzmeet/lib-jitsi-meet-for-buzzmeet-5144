@@ -2487,49 +2487,9 @@ TraceablePeerConnection.prototype.setRemoteDescription = function(description) {
     // Munge stereo flag and opusMaxAverageBitrate based on config.js
     remoteDescription = this._mungeOpus(remoteDescription);
 
-    if (browser.usesPlanB()) {
-        // TODO the focus should squeze or explode the remote simulcast
-        if (this.isSimulcastOn()) {
-            // Determine if "x-google-conference" needs to be added to the remote description.
-            // We need to add that flag for camera tracks always and for desktop tracks only when
-            // capScreenshareBitrate is disabled.
-            const enableConferenceFlag = !(this.options.capScreenshareBitrate && !hasCameraTrack(this));
-
-            // eslint-disable-next-line no-param-reassign
-            description = this.simulcast.mungeRemoteDescription(description, enableConferenceFlag);
-            this.trace(
-                'setRemoteDescription::postTransform (simulcast)',
-                dumpSDP(description));
-        }
-
-        // eslint-disable-next-line no-param-reassign
-        description = normalizePlanB(description);
-    } else {
-        // [Bizwell] SDP PlanB Deprecated 조치, by LeeJx2, 2022.04.05
-        // const currentDescription = this.peerconnection.remoteDescription;
-
-        // // eslint-disable-next-line no-param-reassign
-        // description = this.interop.toUnifiedPlan(description, currentDescription);
-        // this.trace(
-        //     'setRemoteDescription::postTransform (Unified)',
-        //     dumpSDP(description));
-
-        // if (this.isSimulcastOn()) {
-        //     // eslint-disable-next-line no-param-reassign
-        //     description = this.simulcast.mungeRemoteDescription(description);
-
-        //     // eslint-disable-next-line no-param-reassign
-        //     description = this.tpcUtils.insertUnifiedPlanSimulcastReceive(description);
-        //     this.trace(
-        //         'setRemoteDescription::postTransform (sim receive)',
-        //         dumpSDP(description));
-
-        //     // eslint-disable-next-line no-param-reassign
-        //     description = this.tpcUtils.ensureCorrectOrderOfSsrcs(description);
-        // }
-
-         // Translate the SDP to Unified plan format first for the jvb case, p2p case will only have 2 m-lines.
-         if (!this.isP2P) {
+    if (browser.usesUnifiedPlan()) {
+        // Translate the SDP to Unified plan format first for the jvb case, p2p case will only have 2 m-lines.
+        if (!this.isP2P) {
             const currentDescription = this.peerconnection.remoteDescription;
 
             remoteDescription = this.interop.toUnifiedPlan(remoteDescription, currentDescription);
@@ -2545,8 +2505,15 @@ TraceablePeerConnection.prototype.setRemoteDescription = function(description) {
         }
         remoteDescription = this.tpcUtils.ensureCorrectOrderOfSsrcs(remoteDescription);
         this.trace('setRemoteDescription::postTransform (correct ssrc order)', dumpSDP(remoteDescription));
-
-        
+    } else {
+        if (this.isSimulcastOn()) {
+            // Implode the simulcast ssrcs so that the remote sdp has only the first ssrc in the SIM group.
+            remoteDescription = this.simulcast.mungeRemoteDescription(
+                remoteDescription,
+                true /* add x-google-conference flag */);
+            this.trace('setRemoteDescription::postTransform (simulcast)', dumpSDP(remoteDescription));
+        }
+        remoteDescription = normalizePlanB(remoteDescription);
     }
 
     // Munge the order of the codecs based on the preferences set through config.js.
