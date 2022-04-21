@@ -3375,7 +3375,7 @@ JitsiConference.prototype._shouldBeInP2PMode = function() {
     const peers = this.getParticipants();
     const peerCount = peers.length;
     const hasBotPeer = peers.find(p => p.getBotType() === 'poltergeist') !== undefined;
-    const shouldBeInP2P = peerCount === 1 && !hasBotPeer;
+    const shouldBeInP2P = peerCount === 1 && !hasBotPeer && !browser.isReactNative();
 
     logger.debug(`P2P? peerCount: ${peerCount}, hasBotPeer: ${hasBotPeer} => ${shouldBeInP2P}`);
     console.log(`P2P? peerCount: ${peerCount}, hasBotPeer: ${hasBotPeer} => ${shouldBeInP2P}`);
