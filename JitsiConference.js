@@ -3229,6 +3229,11 @@ JitsiConference.prototype._startP2PSession = function(remoteJid) {
         return;
     }
 
+    if (!this.room && browser.isReactNative()) {
+        console.log("eeeeeeeeee");
+        return;
+    }
+
     this.isP2PConnectionInterrupted = false;
     this.p2pJingleSession
         = this.xmpp.connection.jingle.newP2PJingleSession(
