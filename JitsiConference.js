@@ -1685,7 +1685,7 @@ JitsiConference.prototype.muteParticipant = function(id) {
  * @param botType the member botType, if any
  */
 JitsiConference.prototype.onMemberJoined = function(
-        jid, nick, role, isHidden, statsID, status, identity, botType) {
+        jid, nick, role, isHidden, statsID, status, identity, botType, fullJid, features) {
     const id = Strophe.getResourceFromJid(jid);
 
     if (id === 'focus' || this.myUserId() === id) {
@@ -1695,8 +1695,10 @@ JitsiConference.prototype.onMemberJoined = function(
     const participant
         = new JitsiParticipant(jid, this, nick, isHidden, statsID, status, identity);
 
-    participant._role = role;
-    participant._botType = botType;
+    participant.setConnectionJid(fullJid);
+    participant.setRole(role);
+    participant.setBotType(botType);
+    participant.setFeatures(features);
     this.participants[id] = participant;
     this.eventEmitter.emit(
         JitsiConferenceEvents.USER_JOINED,
@@ -1705,7 +1707,9 @@ JitsiConference.prototype.onMemberJoined = function(
 
     this._updateFeatures(participant);
 
-    this._maybeStartOrStopP2P();
+    if (this.isJoined()) {
+        this._maybeStartOrStopP2P();
+    }
     this._maybeSetSITimeout();
 };
 
@@ -1748,7 +1752,7 @@ JitsiConference.prototype._onMemberBotTypeChanged = function(jid, botType) {
     const botParticipant = peers.find(p => p.getJid() === jid);
 
     if (botParticipant) {
-        botParticipant._botType = botType;
+        botParticipant.setBotType(botType);
         const id = Strophe.getResourceFromJid(jid);
 
         this.eventEmitter.emit(
@@ -1761,7 +1765,7 @@ JitsiConference.prototype._onMemberBotTypeChanged = function(jid, botType) {
     // poltergeist mode this is the moment when the poltergeist had exited and
     // the real participant had already replaced it.
     // In this case we can check and try p2p
-    if (!botParticipant._botType) {
+    if (!botParticipant.getBotType()) {
         this._maybeStartOrStopP2P();
     }
 };
@@ -1868,7 +1872,7 @@ JitsiConference.prototype.onUserRoleChanged = function(jid, role) {
     if (!participant) {
         return;
     }
-    participant._role = role;
+    participant.setRole(role);
     this.eventEmitter.emit(JitsiConferenceEvents.USER_ROLE_CHANGED, id, role);
 };
 
