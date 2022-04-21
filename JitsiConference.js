@@ -3229,11 +3229,6 @@ JitsiConference.prototype._startP2PSession = function(remoteJid) {
         return;
     }
 
-    if (!this.room && browser.isReactNative()) {
-        console.log("eeeeeeeeee");
-        return;
-    }
-
     this.isP2PConnectionInterrupted = false;
     this.p2pJingleSession
         = this.xmpp.connection.jingle.newP2PJingleSession(
@@ -3375,7 +3370,7 @@ JitsiConference.prototype._maybeStartOrStopP2P = function(userLeftEvent) {
 JitsiConference.prototype._shouldBeInP2PMode = function() {
     const peers = this.getParticipants();
     const peerCount = peers.length;
-    const hasBotPeer = peers.find(p => p._botType === 'poltergeist') !== undefined;
+    const hasBotPeer = peers.find(p => p.getBotType() === 'poltergeist' || p.hasFeature(FEATURE_JIGASI)) !== undefined;
     const shouldBeInP2P = peerCount === 1 && !hasBotPeer;
 
     logger.debug(`P2P? peerCount: ${peerCount}, hasBotPeer: ${hasBotPeer} => ${shouldBeInP2P}`);
